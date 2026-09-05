@@ -25,7 +25,7 @@ const uniqueWords = [...new Set(RAW_WORDS.map((word) => word.toLocaleLowerCase('
 
 export const DEFAULT_DATA = {
   schemaVersion: 1,
-  appVersion: '0.2.0',
+  appVersion: '0.3.0-beta1',
   words: uniqueWords.map((text, index) => ({
     id: `starter-word-${index + 1}`,
     text,

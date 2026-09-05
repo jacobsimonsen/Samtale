@@ -1,67 +1,50 @@
 # Ændringslog
 
-## 0.2.0 — 2026-09-05
+## 0.3.0-beta1 — 2026-09-05
 
-Testopdatering baseret på observationer fra den første brugstest.
+Første integration af den nye danske sprogmodel i den almindelige PWA. Denne version er en beta til praktisk afprøvning.
 
-### Kommunikation
+### Forslag
 
-- Ny kontekstuel **Fortsæt**-motor med højst 3 forslag.
-  - `jeg` kan fx give `Jeg vil`, `Jeg kan`, `Jeg har` afhængigt af sætningsbanken.
-  - `jeg kan i` kan fx give `Jeg kan ikke`.
-  - Almindelig ord-autocomplete er stadig aktiv ved ufuldstændige ord.
-- **Hele sætninger** er bevaret som en separat forslagstype med højst 3 forslag.
-- Hele sætninger filtreres nu efter betydningsbærende ord. Funktionsord som `er`, `har`, `kan`, `jeg`, `til` osv. kan ikke alene udløse et sætningsforslag.
-- Længere, selvskrevet tekst kræver et stærkere match, før en hel sætning vises.
-- Næsten præcise begyndelser på gemte sætninger kan vises som sætningsfuldførelse.
-- Regressioner dækket af tests:
-  - `regnskab er` må ikke foreslå `Kaffen er for varm.`
-  - `hvordan har fili` må ikke foreslå en sætning alene pga. `har`.
-  - `er der kage til kaffen` må ikke foreslå `Kaffen er for varm.` alene pga. `kaffen`.
-- `Esc` rydder nu teksten direkte, når skrivefeltet har fokus. Den senest ryddede tekst kan fortsat gendannes med knappen **Gendan tekst**.
-- `Esc` fra et forslag går fortsat tilbage til skrivefeltet i stedet for at rydde.
+- COR 1.5.1.0 bruges som generelt dansk ordgrundlag med 391.867 ordformer i den byggede model.
+- En lokal statistisk næste-ord-model bygget på Danish Dynaword/spont giver kontekstafhængige forslag uden internet eller cloudtjeneste.
+- Højst 3 **Fortsæt**-forslag og højst 3 **Hele sætninger** bevares.
+- Hele sætninger kommer fortsat fra den personlige sætningsbank og rangeres separat fra næste-ord-forslag.
+- Den nye motor kan slås fra under **Filer og indstillinger → Avanceret → Forslagsmotor**. V0.2-motoren kan vælges uden datatab.
+- Hvis den generelle model ikke kan indlæses, falder appen automatisk tilbage til den enkle v0.2-motor.
 
-### Redigering
+### Personlig læring
 
-- Prioritetsfelter er flyttet ind under **Avanceret**.
-- Standardprioritet er fortsat 50.
+- Valgte næste-ord-forslag lærer den konkrete foregående kontekst lokalt.
+- Ord, som brugeren selv skriver færdigt med mellemrum eller tegnsætning, lærer også konteksten efter en kort forsinkelse og med lavere vægt end et eksplicit valgt forslag. Rettes det netop skrevne tekststykke straks, gemmes observationen ikke.
+- Når teksten ryddes, kan det sidste selvskrevne ord lære med lav vægt, hvis beskeden ikke sluttede med mellemrum eller tegnsætning.
+- Kun den længste tilgængelige kontekst på op til 3 ord læres. Det reducerer risikoen for, at fx `stol er for → lav` påvirker den mere generelle kontekst `er for`.
+- Personlig læring gemmes lokalt i de eksisterende brugsdata og følger med JSON-backup og daglige snapshots.
+- Den generelle sprogmodel ændres aldrig af brugerens data.
 
-### CSV
+### Tastatur
 
-- CSV-kolonner er fortsat adskilt med semikolon (`;`).
-- Stikord eksporteres nu med komma: `tid,klokken,hvad`.
-- Import accepterer både komma og det gamle `|` som stikordsseparator, så eksisterende filer fortsat virker.
+- `Pil ned` går fra tekstfeltet til forslag.
+- `Pil op` fra det første forslag går tilbage til tekstfeltet og gendanner markørplaceringen.
+- `Esc` fra et forslag går tilbage til tekstfeltet uden at rydde.
+- `Esc` i tekstfeltet rydder teksten; den kan fortsat gendannes med knappen **Gendan tekst**.
+- `Tab` vælger det øverste fortsættelsesforslag.
 
-### Backup
+### Tidligere v0.2-funktioner bevaret
 
-- Automatisk lokalt snapshot én gang pr. dag ved første åbning den dag.
-- De seneste 30 lokale snapshots beholdes.
-- Snapshots kan vælges og gendannes under **Filer og indstillinger**.
-- Ekstern JSON-backup indeholder også den aktuelle kladde.
-- Appen registrerer tidspunktet for seneste eksterne JSON-backup og viser en påmindelse efter 7 dage.
-- Lokale snapshots ligger kun i browserens lager og erstatter derfor ikke en ekstern backupfil.
+- CSV-stikord eksporteres med komma, mens import også accepterer det gamle `|`.
+- Prioritet ligger under **Avanceret**.
+- Dagligt lokalt snapshot, op til 30 snapshots og 7-dages påmindelse om ekstern JSON-backup.
+- Eksisterende lokale ord, sætninger, kladde og brugsdata bruger samme lagernøgler og bevares ved normal opdatering.
 
-### Opdatering
+### Kendte begrænsninger
 
-- App-shell/cache er versionsløftet til 0.2.0.
-- Runtime-filer bruger versionsmarkering, så GitHub Pages-opdateringen lettere bryder den gamle browsercache.
-- Eksisterende lokale ord, sætninger, brugsdata og kladde bruger de samme lagernøgler som 0.1 og bevares ved normal opdatering.
+- Dynaword/spont er et lille og emneskævt samtalekorpus. Forslag kan derfor være grammatisk eller emnemæssigt mindre passende.
+- V0.3 bruger endnu ikke en fuld grammatisk parser. Personlig læring forventes især at forbedre gentagne formuleringer, ikke at løse al dansk grammatik.
+- Appen må aldrig indsætte eller oplæse et forslag automatisk. Brugeren vælger altid selv.
 
-### Validering
+### Test
 
-- 17 automatiske enhedstests.
-- Statisk kontrol af HTML-ID'er, lokale aktiver, manifest og ikoner.
-
-## 0.1.0 — 2026-09-05
-
-Første testversion.
-
-- Præfiksbaserede ordforslag.
-- Sætningsforslag efter valg eller indtastning af et helt ord.
-- Tastaturnavigation med Tab, piletaster, Enter og Escape.
-- Lokal læring af hyppigt valgte ord og sætninger.
-- Redigering af ord og sætninger i appen.
-- JSON- og CSV-import/-eksport.
-- Lokal lagring af indhold, brugsstatistik og kladde.
-- Offline app-shell via service worker.
-- Responsiv, kontrastrig brugerflade med justerbar tekststørrelse.
+- Eksisterende enhedstests for ord, sætninger, CSV og regressioner bevares.
+- Nye tests dækker sprogmodel, personlig kontekstlæring og at specifik læring ikke lækker til kortere, uvedkommende kontekster.
+- Statisk kontrol dækker HTML-ID'er, lokale assets, manifest og service worker.

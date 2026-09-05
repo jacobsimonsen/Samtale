@@ -1,4 +1,5 @@
-import { DEFAULT_DATA } from './default-data.js?v=0.2.0';
+import { DanishPredictor, applyModelSuggestion, recordContextChoice } from './language-model.js?v=0.3.0-beta1';
+import { DEFAULT_DATA } from './default-data.js?v=0.3.0-beta1';
 import {
   applyContinuationSuggestion,
   clampPriority,
@@ -15,9 +16,9 @@ import {
   tokenize,
   unique,
   wordsToCSV,
-} from './lib.js?v=0.2.0';
+} from './lib.js?v=0.3.0-beta1';
 
-const APP_VERSION = '0.2.0';
+const APP_VERSION = '0.3.0-beta1';
 const STORAGE_KEYS = {
   data: 'samtalestotte.data.v1',
   settings: 'samtalestotte.settings.v1',
@@ -29,6 +30,7 @@ const STORAGE_KEYS = {
 
 const DEFAULT_SETTINGS = {
   messageFontSize: 48,
+  predictionEngine: 'v03',
 };
 
 const CONTINUATION_LIMIT = 3;
@@ -40,7 +42,9 @@ const elements = {};
 const state = {
   data: sanitizeData(structuredCloneSafe(DEFAULT_DATA)),
   settings: { ...DEFAULT_SETTINGS },
-  usage: { words: {}, sentences: {} },
+  usage: { words: {}, sentences: {}, contexts: {} },
+  predictor: null,
+  composerSelection: null,
   wordSuggestions: [],
   sentenceSuggestions: [],
   snapshots: [],
@@ -64,6 +68,7 @@ function byId(id) {
 function collectElements() {
   Object.assign(elements, {
     message: byId('message'),
+    modelStatus: byId('model-status'),
     clearMessage: byId('clear-message'),
     wordPanel: byId('word-panel'),
     wordContext: byId('word-context'),
@@ -106,6 +111,7 @@ function collectElements() {
     externalBackupReminder: byId('external-backup-reminder'),
     messageFontSize: byId('message-font-size'),
     messageFontSizeOutput: byId('message-font-size-output'),
+    predictionEngine: byId('prediction-engine'),
     resetData: byId('reset-data'),
   });
 }
@@ -146,6 +152,7 @@ function loadState() {
     ...(storedSettings && typeof storedSettings === 'object' ? storedSettings : {}),
   };
   state.settings.messageFontSize = Math.max(32, Math.min(72, Number(state.settings.messageFontSize) || 48));
+  state.settings.predictionEngine = state.settings.predictionEngine === 'v02' ? 'v02' : 'v03';
 
   state.snapshots = Array.isArray(storedSnapshots) ? storedSnapshots.slice(-SNAPSHOT_LIMIT) : [];
   if (storedBackupMeta && typeof storedBackupMeta === 'object') {
@@ -158,6 +165,7 @@ function loadState() {
     state.usage = {
       words: storedUsage.words && typeof storedUsage.words === 'object' ? storedUsage.words : {},
       sentences: storedUsage.sentences && typeof storedUsage.sentences === 'object' ? storedUsage.sentences : {},
+      contexts: storedUsage.contexts && typeof storedUsage.contexts === 'object' ? storedUsage.contexts : {},
     };
   }
 
@@ -196,7 +204,7 @@ function showToast(message, duration = 2600) {
 
 function updateConnectionStatus() {
   const online = navigator.onLine;
-  elements.connectionStatus.textContent = online ? 'Online · virker også offline' : 'Offline';
+  elements.connectionStatus.textContent = online ? 'Online' : 'Offline';
   elements.connectionStatus.classList.toggle('is-online', online);
   elements.connectionStatus.classList.toggle('is-offline', !online);
 }
@@ -206,6 +214,7 @@ function applySettingsToUI() {
   elements.messageFontSize.value = String(state.settings.messageFontSize);
   elements.messageFontSizeOutput.value = `${state.settings.messageFontSize} px`;
   elements.messageFontSizeOutput.textContent = `${state.settings.messageFontSize} px`;
+  if (elements.predictionEngine) elements.predictionEngine.value = state.settings.predictionEngine;
 }
 
 function setupNavigation() {
@@ -243,13 +252,11 @@ function renderSuggestions() {
   const caret = elements.message.selectionStart ?? text.length;
   const beforeCaret = text.slice(0, caret);
 
-  state.wordSuggestions = rankContinuationSuggestions(
-    state.data.sentences,
-    state.data.words,
-    beforeCaret,
-    state.usage,
-    CONTINUATION_LIMIT,
-  );
+  const useNewEngine = state.settings.predictionEngine !== 'v02' && state.predictor;
+  state.wordSuggestions = useNewEngine
+    ? state.predictor.predict(text, caret, state.usage, CONTINUATION_LIMIT)
+    : rankContinuationSuggestions(state.data.sentences, state.data.words,
+      beforeCaret, state.usage, CONTINUATION_LIMIT);
 
   if (state.wordSuggestions.length > 0) {
     elements.wordPanel.hidden = false;
@@ -349,11 +356,20 @@ function applyWordSuggestion(index) {
   const suggestion = state.wordSuggestions[index];
   if (!suggestion) return;
 
-  const result = applyContinuationSuggestion(
-    elements.message.value,
-    elements.message.selectionStart ?? elements.message.value.length,
-    suggestion,
-  );
+  let result;
+  try {
+    result = suggestion.kind === 'model'
+      ? applyModelSuggestion(elements.message.value, suggestion)
+      : applyContinuationSuggestion(elements.message.value,
+        elements.message.selectionStart ?? elements.message.value.length, suggestion);
+  } catch (error) {
+    renderSuggestions();
+    elements.message.focus();
+    return;
+  }
+  if (suggestion.kind === 'model') {
+    recordContextChoice(state.usage, suggestion.context, suggestion.nextToken);
+  }
 
   state.previousMessage = elements.message.value;
   elements.message.value = result.text;
@@ -380,6 +396,7 @@ function applySentenceSuggestion(index) {
 }
 
 function focusSuggestion(container, index = 0) {
+  state.composerSelection = [elements.message.selectionStart, elements.message.selectionEnd];
   const controls = [...container.querySelectorAll('.suggestion-control')];
   if (controls.length === 0) return false;
   const target = controls[Math.max(0, Math.min(index, controls.length - 1))];
@@ -387,11 +404,23 @@ function focusSuggestion(container, index = 0) {
   return true;
 }
 
+function returnToComposer() {
+  const selection = state.composerSelection ?? [elements.message.selectionStart, elements.message.selectionEnd];
+  elements.message.focus();
+  elements.message.setSelectionRange(selection[0], selection[1]);
+  state.composerSelection = null;
+}
+
 function handleSuggestionKeydown(event) {
   const controls = [...document.querySelectorAll('.suggestion-control:not([hidden])')];
   const currentIndex = controls.indexOf(event.currentTarget);
   if (currentIndex < 0) return;
 
+  if (event.key === 'Escape' || (event.key === 'ArrowUp' && currentIndex === 0)) {
+    event.preventDefault();
+    returnToComposer();
+    return;
+  }
   let nextIndex = currentIndex;
   if (event.key === 'ArrowDown' || event.key === 'ArrowRight') nextIndex = Math.min(controls.length - 1, currentIndex + 1);
   else if (event.key === 'ArrowUp' || event.key === 'ArrowLeft') nextIndex = Math.max(0, currentIndex - 1);
@@ -399,7 +428,7 @@ function handleSuggestionKeydown(event) {
   else if (event.key === 'End') nextIndex = controls.length - 1;
   else if (event.key === 'Escape') {
     event.preventDefault();
-    elements.message.focus();
+    returnToComposer();
     return;
   } else {
     return;
@@ -411,6 +440,7 @@ function handleSuggestionKeydown(event) {
 
 function clearComposerText() {
   if (!elements.message.value) return false;
+  learnFinalTypedWord();
   state.previousMessage = elements.message.value;
   elements.message.value = '';
   elements.clearMessage.textContent = 'Gendan tekst';
@@ -433,6 +463,45 @@ function restoreComposerText() {
   return true;
 }
 
+function scheduleTypedBoundaryLearning(event) {
+  if (!state.predictor || state.settings.predictionEngine === 'v02') return;
+  if (event?.inputType !== 'insertText' || typeof event.data !== 'string') return;
+  if (!/[\s,.;:!?)]/u.test(event.data)) return;
+  const text = elements.message.value;
+  const caret = elements.message.selectionStart ?? text.length;
+  const insertedLength = event.data.length;
+  const insertionStart = Math.max(0, caret - insertedLength);
+  // Multiple spaces/punctuation after an already completed token must not count twice.
+  if (insertionStart <= 0 || !/[\p{L}\p{M}'’\-]/u.test(text[insertionStart - 1] ?? '')) return;
+  const beforeBoundary = text.slice(0, insertionStart);
+  const segment = beforeBoundary.split(/[.!?\n\r\d]+/u).at(-1) ?? '';
+  const terms = tokenize(segment);
+  if (terms.length < 2) return;
+  const nextWord = terms.at(-1);
+  const context = terms.slice(Math.max(0, terms.length - 4), -1);
+  const fingerprint = text.slice(0, caret);
+  // Give the user a short opportunity to correct the just-finished word. Continuing
+  // after it does not cancel learning, but changing the captured prefix does.
+  window.setTimeout(() => {
+    if (!elements.message.value.startsWith(fingerprint)) return;
+    recordContextChoice(state.usage, context, nextWord, Date.now(), 0.35);
+    incrementUsage('words', normalizeWord(nextWord));
+  }, 1000);
+}
+
+function learnFinalTypedWord() {
+  if (!state.predictor || state.settings.predictionEngine === 'v02') return;
+  const text = elements.message.value;
+  if (!text || /[\s,.;:!?)]$/u.test(text)) return;
+  const segment = text.split(/[.!?\n\r\d]+/u).at(-1) ?? '';
+  const terms = tokenize(segment);
+  if (terms.length < 2) return;
+  const nextWord = terms.at(-1);
+  const context = terms.slice(Math.max(0, terms.length - 4), -1);
+  recordContextChoice(state.usage, context, nextWord, Date.now(), 0.2);
+  incrementUsage('words', normalizeWord(nextWord));
+}
+
 function setupComposer() {
   elements.message.addEventListener('compositionstart', () => {
     state.isComposing = true;
@@ -443,8 +512,9 @@ function setupComposer() {
     renderSuggestions();
   });
 
-  elements.message.addEventListener('input', () => {
+  elements.message.addEventListener('input', (event) => {
     if (state.isComposing) return;
+    scheduleTypedBoundaryLearning(event);
     if (elements.message.value) elements.clearMessage.textContent = 'Ryd tekst';
     queueSave({ draft: true });
     renderSuggestions();
@@ -457,6 +527,7 @@ function setupComposer() {
 
   elements.message.addEventListener('keydown', (event) => {
     if (state.isComposing) return;
+    if (event.key === 'Escape' && event.repeat) { event.preventDefault(); return; }
 
     if (event.key === 'Escape' && !event.shiftKey && !event.ctrlKey && !event.metaKey && !event.altKey) {
       if (elements.message.value) {
@@ -490,6 +561,7 @@ function setupComposer() {
 }
 
 function renderEditors() {
+  if (state.predictor) state.predictor.setPersonal(state.data);
   renderWordList();
   renderSentenceList();
 }
@@ -770,13 +842,26 @@ function ensureDailySnapshot() {
     id: `snapshot-${today}`,
     date: today,
     createdAt: new Date().toISOString(),
-    backup: createBackupPayload(),
+    backup: structuredCloneSafe(createBackupPayload()),
   };
   state.snapshots = [...state.snapshots, snapshot]
     .filter((item) => item && item.date && item.backup)
     .sort((a, b) => String(a.date).localeCompare(String(b.date)))
     .slice(-SNAPSHOT_LIMIT);
-  safeWriteStorage(STORAGE_KEYS.snapshots, state.snapshots);
+  let copies = [...state.snapshots];
+  while (copies.length) {
+    try {
+      localStorage.setItem(STORAGE_KEYS.snapshots, JSON.stringify(copies));
+      state.snapshots = copies;
+      break;
+    } catch (error) {
+      if (copies.length === 1) {
+        showToast('Ikke plads til lokalt snapshot. Eksportér en backupfil.', 5000);
+        break;
+      }
+      copies = copies.slice(1);
+    }
+  }
 }
 
 function formatDateTime(timestamp) {
@@ -838,9 +923,11 @@ function restoreSnapshot(snapshot) {
   state.data = sanitizeData(backup.data);
   state.settings = { ...DEFAULT_SETTINGS, ...(backup.settings ?? {}) };
   state.settings.messageFontSize = Math.max(32, Math.min(72, Number(state.settings.messageFontSize) || 48));
+  state.settings.predictionEngine = state.settings.predictionEngine === 'v02' ? 'v02' : 'v03';
   state.usage = {
     words: backup.usage?.words ?? {},
     sentences: backup.usage?.sentences ?? {},
+    contexts: backup.usage?.contexts ?? {},
   };
   elements.message.value = typeof backup.draft === 'string' ? backup.draft : '';
   safeWriteStorage(STORAGE_KEYS.data, state.data);
@@ -916,12 +1003,15 @@ function setupDataTools() {
 
         if (replace && parsed?.settings) {
           state.settings = { ...DEFAULT_SETTINGS, ...parsed.settings };
+          state.settings.messageFontSize = Math.max(32, Math.min(72, Number(state.settings.messageFontSize) || 48));
+          state.settings.predictionEngine = state.settings.predictionEngine === 'v02' ? 'v02' : 'v03';
           applySettingsToUI();
         }
         if (replace && parsed?.usage) {
           state.usage = {
             words: parsed.usage.words ?? {},
             sentences: parsed.usage.sentences ?? {},
+            contexts: parsed.usage.contexts ?? {},
           };
         }
         if (replace && typeof parsed?.draft === 'string') {
@@ -958,6 +1048,7 @@ function setupDataTools() {
     event.preventDefault();
     state.settings = {
       messageFontSize: Math.max(32, Math.min(72, Number(elements.messageFontSize.value) || 48)),
+      predictionEngine: elements.predictionEngine?.value === 'v02' ? 'v02' : 'v03',
     };
     applySettingsToUI();
     queueSave({ settings: true });
@@ -969,7 +1060,7 @@ function setupDataTools() {
     const confirmed = window.confirm('Nulstil ord og sætninger til demonstrationsdata? Lokale ændringer slettes.');
     if (!confirmed) return;
     state.data = sanitizeData(structuredCloneSafe(DEFAULT_DATA));
-    state.usage = { words: {}, sentences: {} };
+    state.usage = { words: {}, sentences: {}, contexts: {} };
     queueSave({ data: true, usage: true });
     resetWordForm();
     resetSentenceForm();
@@ -997,11 +1088,35 @@ function registerServiceWorker() {
   if (!('serviceWorker' in navigator)) return;
   window.addEventListener('load', async () => {
     try {
-      await navigator.serviceWorker.register('./sw.js?v=0.2.0');
+      await navigator.serviceWorker.register('./sw.js?v=0.3.0-beta1');
     } catch (error) {
       console.warn('Service worker kunne ikke registreres', error);
     }
   });
+}
+
+
+async function loadGeneralModel() {
+  elements.modelStatus.textContent = 'Sprogmodel indlæses...';
+  try {
+    const response = await fetch('./language-data.json');
+    if (!response.ok) throw new Error('Model ikke bygget');
+    const data = await response.json();
+    const testMode = ['localhost', '127.0.0.1'].includes(location.hostname)
+      && new URLSearchParams(location.search).has('test-fixture');
+    if (data.metadata?.fixture && !testMode) throw new Error('Kun syntetiske testdata');
+    state.predictor = new DanishPredictor(data);
+    state.predictor.setPersonal(state.data);
+    const count = state.predictor.lexicon.length.toLocaleString('da-DK');
+    elements.modelStatus.textContent = data.metadata?.fixture
+      ? 'Syntetiske testdata - ikke en dansk sprogmodel'
+      : `Dansk sprogmodel klar: ${count} ordformer`;
+    if (state.settings.predictionEngine === 'v02') elements.modelStatus.textContent += ' (v0.2-motor valgt)';
+    if (!document.activeElement?.classList.contains('suggestion-control')) renderSuggestions();
+  } catch (error) {
+    elements.modelStatus.textContent = 'Sprogmodel ikke klar - den enkle v0.2-motor bruges.';
+    console.warn('Sprogmodel:', error.message);
+  }
 }
 
 function initialize() {
@@ -1020,6 +1135,7 @@ function initialize() {
   window.addEventListener('online', updateConnectionStatus);
   window.addEventListener('offline', updateConnectionStatus);
   registerServiceWorker();
+  loadGeneralModel();
   requestPersistentStorage();
   window.requestAnimationFrame(() => elements.message.focus());
 }

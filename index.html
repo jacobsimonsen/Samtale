@@ -13,18 +13,19 @@
   <link rel="manifest" href="./manifest.webmanifest">
   <link rel="apple-touch-icon" href="./icons/icon-192.png">
   <link rel="icon" href="./icons/icon-192.png" type="image/png">
-  <link rel="stylesheet" href="./styles.css?v=0.2.0">
+  <link rel="stylesheet" href="./styles.css?v=0.3.0-beta1">
 </head>
 <body>
   <a class="skip-link" href="#message">Gå til skrivefeltet</a>
 
   <header class="app-header">
     <div>
-      <p class="eyebrow">Prototype 0.2</p>
+      <p class="eyebrow">Prototype 0.3 beta</p>
       <h1>Samtalestøtte</h1>
     </div>
     <div class="status-area" aria-live="polite">
       <span id="connection-status" class="status-pill">Kontrollerer forbindelse…</span>
+      <span id="model-status" class="save-status">Sprogmodel ikke indlæst</span>
       <span id="save-status" class="save-status">Gemt lokalt</span>
     </div>
   </header>
@@ -61,7 +62,7 @@
         ></textarea>
 
         <p class="keyboard-hint">
-          Brug <kbd>Tab</kbd> til det øverste forslag, <kbd>Pil ned</kbd> for at vælge mellem forslag og <kbd>Esc</kbd> for at rydde teksten.
+          Brug <kbd>Tab</kbd> til det øverste forslag, <kbd>Pil ned</kbd> til forslag, <kbd>Pil op</kbd> tilbage til teksten. <kbd>Esc</kbd> går tilbage fra forslag eller rydder teksten i skrivefeltet.
         </p>
       </div>
 
@@ -89,7 +90,7 @@
 
       <section id="empty-guidance" class="guidance-card">
         <h2>Sådan virker prototypen</h2>
-        <p>Appen hjælper i små trin. <strong>ka</strong> giver ord som <strong>kaffe</strong>, mens <strong>jeg</strong> kan give fortsættelser som <strong>Jeg vil</strong>, <strong>Jeg er</strong> og <strong>Jeg kan</strong>. Relevante hele sætninger vises separat.</p>
+        <p>Appen hjælper i små trin. <strong>ka</strong> giver ord som <strong>kaffe</strong>, mens <strong>jeg</strong> kan give næste ord som <strong>vil</strong>, <strong>er</strong> og <strong>kan</strong>. Relevante hele sætninger vises separat.</p>
         <p>Der er ingen faste frasegenveje og ingen tekst-til-tale i denne version.</p>
       </section>
     </section>
@@ -220,7 +221,7 @@
 
         <section class="editor-card" aria-labelledby="settings-title">
           <h3 id="settings-title">Visning</h3>
-          <p>Prototype 0.2 viser højst tre fortsættelser og tre hele sætninger.</p>
+          <p>Prototype 0.3 viser højst tre fortsættelser og tre hele sætninger. Den nye motor kan skiftes fra, hvis den giver problemer.</p>
           <form id="settings-form" class="stack-form">
 
             <label for="message-font-size">Skriftstørrelse i skrivefelt</label>
@@ -228,6 +229,19 @@
               <input id="message-font-size" type="range" min="32" max="72" step="2" value="48">
               <output id="message-font-size-output" for="message-font-size">48 px</output>
             </div>
+
+
+            <details class="advanced-settings" open>
+              <summary>Avanceret</summary>
+              <div class="advanced-settings-body">
+                <label for="prediction-engine">Forslagsmotor</label>
+                <select id="prediction-engine">
+                  <option value="v03">Ny v0.3: dansk sprogmodel + personlig læring</option>
+                  <option value="v02">Enkel v0.2: kun lokal ord- og sætningsbank</option>
+                </select>
+                <p class="field-help">Skift til v0.2, hvis den nye motor giver dårlige forslag. Dine personlige data slettes ikke.</p>
+              </div>
+            </details>
 
             <button type="submit" class="primary-button">Gem indstillinger</button>
           </form>
@@ -245,6 +259,6 @@
   <div id="toast" class="toast" role="status" aria-live="polite" hidden></div>
 
   <noscript>Denne app kræver JavaScript.</noscript>
-  <script type="module" src="./app.js?v=0.2.0"></script>
+  <script type="module" src="./app.js?v=0.3.0-beta1"></script>
 </body>
 </html>

@@ -2,12 +2,15 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 
 import {
+  applyContinuationSuggestion,
   dataFromCSV,
   deriveKeywords,
   getCurrentTokenInfo,
   mergeData,
   parseDelimited,
+  rankContinuationSuggestions,
   rankSentenceSuggestions,
+  rankWholeSentenceSuggestions,
   rankWordSuggestions,
   replaceCurrentToken,
   sanitizeData,
@@ -108,4 +111,71 @@ test('bevarer store bogstaver i personnavne i ordlisten', () => {
   });
   assert.ok(data.words.some((word) => word.text === 'Peter'));
   assert.equal(rankWordSuggestions(data.words, 'pe', {}, 5)[0].text, 'Peter');
+});
+
+
+test('fortsættelser udledes af begyndelsen på gemte sætninger', () => {
+  const sentences = [
+    { id: '1', text: 'Jeg vil gerne have kaffe.', keywords: ['kaffe'], priority: 80 },
+    { id: '2', text: 'Jeg kan ikke høre dig.', keywords: ['høre'], priority: 80 },
+    { id: '3', text: 'Jeg kan godt selv.', keywords: ['selv'], priority: 80 },
+  ];
+  const words = [
+    { id: 'w1', text: 'jeg', priority: 80 },
+    { id: 'w2', text: 'kan', priority: 80 },
+    { id: 'w3', text: 'ikke', priority: 80 },
+  ];
+  assert.deepEqual(
+    rankContinuationSuggestions(sentences, words, 'jeg', { words: {}, sentences: {} }, 3).map((item) => item.text),
+    ['Jeg kan', 'Jeg vil'],
+  );
+  assert.deepEqual(
+    rankContinuationSuggestions(sentences, words, 'jeg kan i', { words: {}, sentences: {} }, 3)[0].text,
+    'Jeg kan ikke',
+  );
+});
+
+test('fortsættelse indsættes uden at overskrive resten af processen', () => {
+  const result = applyContinuationSuggestion('jeg kan i', 9, {
+    kind: 'phrase',
+    text: 'Jeg kan ikke',
+  });
+  assert.equal(result.text, 'Jeg kan ikke ');
+  assert.equal(result.selectionStart, 13);
+});
+
+test('funktionsord alene udløser ikke hele sætninger', () => {
+  const sentences = [
+    { id: '1', text: 'Kaffen er for varm.', keywords: ['kaffe', 'varm'], priority: 90 },
+  ];
+  assert.deepEqual(rankWholeSentenceSuggestions(sentences, 'regnskab er', {}, 3), []);
+  assert.deepEqual(rankWholeSentenceSuggestions(sentences, 'hvordan har fili', {}, 3), []);
+});
+
+test('en længere selvskrevet sætning får ikke et malplaceret kaffe-forslag', () => {
+  const sentences = [
+    { id: '1', text: 'Kaffen er for varm.', keywords: ['kaffe', 'varm'], priority: 90 },
+  ];
+  assert.deepEqual(rankWholeSentenceSuggestions(sentences, 'er der kage til kaffen', {}, 3), []);
+});
+
+test('korte betydningsbærende stikord kan stadig give hele sætninger', () => {
+  const sentences = [
+    { id: '1', text: 'Jeg vil gerne have kaffe.', keywords: ['kaffe'], priority: 80 },
+    { id: '2', text: 'Kaffen er for varm.', keywords: ['kaffe', 'varm'], priority: 90 },
+  ];
+  const suggestions = rankWholeSentenceSuggestions(sentences, 'kaffe', {}, 3);
+  assert.equal(suggestions.length, 2);
+});
+
+test('sætnings-CSV eksporterer stikord med komma og accepterer ældre lodrette streger', () => {
+  const csv = sentencesToCSV([
+    { id: '1', text: 'Hvad er klokken?', keywords: ['tid', 'klokken', 'hvad'], priority: 50 },
+  ]);
+  assert.match(csv, /tid,klokken,hvad/u);
+
+  const modern = dataFromCSV('sætning;stikord;prioritet\nHvad er klokken?;tid,klokken,hvad;50');
+  const legacy = dataFromCSV('sætning;stikord;prioritet\nHvad er klokken?;tid|klokken|hvad;50');
+  assert.deepEqual(modern.data.sentences[0].keywords, ['tid', 'klokken', 'hvad']);
+  assert.deepEqual(legacy.data.sentences[0].keywords, ['tid', 'klokken', 'hvad']);
 });
