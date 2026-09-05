@@ -1,11 +1,11 @@
-const CACHE_NAME = 'samtalestotte-shell-v0.1.0';
+const CACHE_NAME = 'samtalestotte-shell-v0.2.0';
 const APP_SHELL = [
   './',
   './index.html',
-  './styles.css',
-  './app.js',
-  './lib.js',
-  './default-data.js',
+  './styles.css?v=0.2.0',
+  './app.js?v=0.2.0',
+  './lib.js?v=0.2.0',
+  './default-data.js?v=0.2.0',
   './manifest.webmanifest',
   './icons/icon-192.png',
   './icons/icon-512.png',

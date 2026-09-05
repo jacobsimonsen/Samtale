@@ -13,14 +13,14 @@
   <link rel="manifest" href="./manifest.webmanifest">
   <link rel="apple-touch-icon" href="./icons/icon-192.png">
   <link rel="icon" href="./icons/icon-192.png" type="image/png">
-  <link rel="stylesheet" href="./styles.css">
+  <link rel="stylesheet" href="./styles.css?v=0.2.0">
 </head>
 <body>
   <a class="skip-link" href="#message">Gå til skrivefeltet</a>
 
   <header class="app-header">
     <div>
-      <p class="eyebrow">Prototype 0.1</p>
+      <p class="eyebrow">Prototype 0.2</p>
       <h1>Samtalestøtte</h1>
     </div>
     <div class="status-area" aria-live="polite">
@@ -61,15 +61,15 @@
         ></textarea>
 
         <p class="keyboard-hint">
-          Skriv mindst ét bogstav. Brug <kbd>Tab</kbd> til det øverste ordforslag eller <kbd>Pil ned</kbd> for at vælge mellem forslag.
+          Brug <kbd>Tab</kbd> til det øverste forslag, <kbd>Pil ned</kbd> for at vælge mellem forslag og <kbd>Esc</kbd> for at rydde teksten.
         </p>
       </div>
 
       <section id="word-panel" class="suggestion-panel" aria-labelledby="word-title" hidden>
         <div class="suggestion-heading">
           <div>
-            <p class="section-kicker">Trin 1</p>
-            <h2 id="word-title">Ordforslag</h2>
+            <p class="section-kicker">Forslag</p>
+            <h2 id="word-title">Fortsæt</h2>
           </div>
           <p id="word-context" class="context-label"></p>
         </div>
@@ -79,8 +79,8 @@
       <section id="sentence-panel" class="suggestion-panel sentence-panel" aria-labelledby="sentence-title" hidden>
         <div class="suggestion-heading">
           <div>
-            <p class="section-kicker">Trin 2</p>
-            <h2 id="sentence-title">Sætningsforslag</h2>
+            <p class="section-kicker">Forslag</p>
+            <h2 id="sentence-title">Hele sætninger</h2>
           </div>
           <p id="sentence-context" class="context-label"></p>
         </div>
@@ -89,7 +89,7 @@
 
       <section id="empty-guidance" class="guidance-card">
         <h2>Sådan virker prototypen</h2>
-        <p>Når du skriver <strong>ka</strong>, foreslår appen eksempelvis <strong>kaffe</strong>, <strong>kage</strong> og <strong>kan</strong>. Når et helt ord er valgt eller skrevet, vises sætninger, der indeholder ordet.</p>
+        <p>Appen hjælper i små trin. <strong>ka</strong> giver ord som <strong>kaffe</strong>, mens <strong>jeg</strong> kan give fortsættelser som <strong>Jeg vil</strong>, <strong>Jeg er</strong> og <strong>Jeg kan</strong>. Relevante hele sætninger vises separat.</p>
         <p>Der er ingen faste frasegenveje og ingen tekst-til-tale i denne version.</p>
       </section>
     </section>
@@ -116,8 +116,13 @@
             <label for="word-text">Ord</label>
             <input id="word-text" name="word" type="text" inputmode="text" autocomplete="off" required>
 
-            <label for="word-priority">Prioritet, 1–100</label>
-            <input id="word-priority" name="priority" type="number" min="1" max="100" value="50" required>
+            <details class="advanced-settings">
+              <summary>Avanceret</summary>
+              <div class="advanced-settings-body">
+                <label for="word-priority">Prioritet, 1–100</label>
+                <input id="word-priority" name="priority" type="number" min="1" max="100" value="50" required>
+              </div>
+            </details>
 
             <div class="button-row">
               <button type="submit" class="primary-button">Gem ord</button>
@@ -148,8 +153,14 @@
             <input id="sentence-keywords" name="keywords" type="text" autocomplete="off" placeholder="kaffe, drikke, varm">
             <p class="field-help">Lades feltet tomt, udleder appen selv stikord fra sætningen.</p>
 
-            <label for="sentence-priority">Prioritet, 1–100</label>
-            <input id="sentence-priority" name="priority" type="number" min="1" max="100" value="50" required>
+            <details class="advanced-settings">
+              <summary>Avanceret</summary>
+              <div class="advanced-settings-body">
+                <label for="sentence-priority">Prioritet, 1–100</label>
+                <input id="sentence-priority" name="priority" type="number" min="1" max="100" value="50" required>
+                <p class="field-help">Højere prioritet bruges kun som en mindre del af rangeringen. Standard 50 er normalt passende.</p>
+              </div>
+            </details>
 
             <div class="button-row">
               <button type="submit" class="primary-button">Gem sætning</button>
@@ -172,18 +183,28 @@
 
       <div class="data-layout">
         <section class="editor-card" aria-labelledby="backup-title">
-          <h3 id="backup-title">Eksportér</h3>
-          <p>JSON gemmer hele databasen og er bedst til backup. CSV-filer kan redigeres i et regneark.</p>
+          <h3 id="backup-title">Backup og eksport</h3>
+          <p><strong>JSON</strong> er en komplet backup af appens aktuelle data og læring. <strong>CSV</strong> er beregnet til redigering i Excel eller et andet regneark.</p>
+          <p id="external-backup-reminder" class="backup-reminder" hidden></p>
           <div class="button-column">
-            <button type="button" id="export-json" class="primary-button">Eksportér komplet JSON-backup</button>
-            <button type="button" id="export-words-csv" class="secondary-button">Eksportér ord som CSV</button>
-            <button type="button" id="export-sentences-csv" class="secondary-button">Eksportér sætninger som CSV</button>
+            <button type="button" id="export-json" class="primary-button">Download komplet backup (.json)</button>
+            <button type="button" id="export-words-csv" class="secondary-button">Eksportér ord til regneark (.csv)</button>
+            <button type="button" id="export-sentences-csv" class="secondary-button">Eksportér sætninger til regneark (.csv)</button>
           </div>
+        </section>
+
+        <section class="editor-card" aria-labelledby="snapshot-title">
+          <h3 id="snapshot-title">Automatiske lokale backups</h3>
+          <p>Appen gemmer ét lokalt snapshot pr. dag og beholder de seneste 30. De ligger kun på denne enhed og erstatter derfor ikke en ekstern JSON-backup.</p>
+          <p id="snapshot-status" class="backup-status">Ingen snapshots endnu.</p>
+          <label for="snapshot-select">Gendan tidligere snapshot</label>
+          <select id="snapshot-select"></select>
+          <button type="button" id="restore-snapshot" class="secondary-button">Gendan valgt snapshot</button>
         </section>
 
         <section class="editor-card" aria-labelledby="import-title">
           <h3 id="import-title">Importér</h3>
-          <p>Understøtter appens JSON-format samt CSV med henholdsvis ord eller sætninger.</p>
+          <p>Understøtter appens JSON-format samt semikolonsepareret CSV. Stikord i en CSV-celle kan adskilles med komma; ældre filer med <code>|</code> understøttes fortsat.</p>
 
           <label for="import-mode">Importmetode</label>
           <select id="import-mode">
@@ -199,12 +220,8 @@
 
         <section class="editor-card" aria-labelledby="settings-title">
           <h3 id="settings-title">Visning</h3>
+          <p>Prototype 0.2 viser højst tre fortsættelser og tre hele sætninger.</p>
           <form id="settings-form" class="stack-form">
-            <label for="word-suggestion-count">Antal ordforslag</label>
-            <input id="word-suggestion-count" type="number" min="3" max="12" value="6">
-
-            <label for="sentence-suggestion-count">Antal sætningsforslag</label>
-            <input id="sentence-suggestion-count" type="number" min="2" max="10" value="5">
 
             <label for="message-font-size">Skriftstørrelse i skrivefelt</label>
             <div class="range-row">
@@ -228,6 +245,6 @@
   <div id="toast" class="toast" role="status" aria-live="polite" hidden></div>
 
   <noscript>Denne app kræver JavaScript.</noscript>
-  <script type="module" src="./app.js"></script>
+  <script type="module" src="./app.js?v=0.2.0"></script>
 </body>
 </html>

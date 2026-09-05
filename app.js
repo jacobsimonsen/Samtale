@@ -1,5 +1,6 @@
-import { DEFAULT_DATA } from './default-data.js';
+import { DEFAULT_DATA } from './default-data.js?v=0.2.0';
 import {
+  applyContinuationSuggestion,
   clampPriority,
   createId,
   dataFromCSV,
@@ -7,29 +8,33 @@ import {
   mergeData,
   normalizeText,
   normalizeWord,
-  rankSentenceSuggestions,
-  rankWordSuggestions,
-  replaceCurrentToken,
+  rankContinuationSuggestions,
+  rankWholeSentenceSuggestions,
   sanitizeData,
   sentencesToCSV,
   tokenize,
   unique,
   wordsToCSV,
-} from './lib.js';
+} from './lib.js?v=0.2.0';
 
-const APP_VERSION = '0.1.0';
+const APP_VERSION = '0.2.0';
 const STORAGE_KEYS = {
   data: 'samtalestotte.data.v1',
   settings: 'samtalestotte.settings.v1',
   usage: 'samtalestotte.usage.v1',
   draft: 'samtalestotte.draft.v1',
+  snapshots: 'samtalestotte.snapshots.v2',
+  backupMeta: 'samtalestotte.backup-meta.v2',
 };
 
 const DEFAULT_SETTINGS = {
-  wordSuggestionCount: 6,
-  sentenceSuggestionCount: 5,
   messageFontSize: 48,
 };
+
+const CONTINUATION_LIMIT = 3;
+const SENTENCE_LIMIT = 3;
+const SNAPSHOT_LIMIT = 30;
+const EXTERNAL_BACKUP_REMINDER_DAYS = 7;
 
 const elements = {};
 const state = {
@@ -38,8 +43,8 @@ const state = {
   usage: { words: {}, sentences: {} },
   wordSuggestions: [],
   sentenceSuggestions: [],
-  focusTerm: '',
-  suppressSentenceSuggestions: false,
+  snapshots: [],
+  backupMeta: { lastExternalExport: 0 },
   previousMessage: '',
   isComposing: false,
   saveTimer: null,
@@ -95,8 +100,10 @@ function collectElements() {
     importButton: byId('import-button'),
     importResult: byId('import-result'),
     settingsForm: byId('settings-form'),
-    wordSuggestionCount: byId('word-suggestion-count'),
-    sentenceSuggestionCount: byId('sentence-suggestion-count'),
+    snapshotStatus: byId('snapshot-status'),
+    snapshotSelect: byId('snapshot-select'),
+    restoreSnapshot: byId('restore-snapshot'),
+    externalBackupReminder: byId('external-backup-reminder'),
     messageFontSize: byId('message-font-size'),
     messageFontSizeOutput: byId('message-font-size-output'),
     resetData: byId('reset-data'),
@@ -130,15 +137,22 @@ function loadState() {
   const storedSettings = safeReadStorage(STORAGE_KEYS.settings, null);
   const storedUsage = safeReadStorage(STORAGE_KEYS.usage, null);
   const storedDraft = safeReadStorage(STORAGE_KEYS.draft, '');
+  const storedSnapshots = safeReadStorage(STORAGE_KEYS.snapshots, []);
+  const storedBackupMeta = safeReadStorage(STORAGE_KEYS.backupMeta, null);
 
   if (storedData) state.data = sanitizeData(storedData);
   state.settings = {
     ...DEFAULT_SETTINGS,
     ...(storedSettings && typeof storedSettings === 'object' ? storedSettings : {}),
   };
-  state.settings.wordSuggestionCount = Math.max(3, Math.min(12, Number(state.settings.wordSuggestionCount) || 6));
-  state.settings.sentenceSuggestionCount = Math.max(2, Math.min(10, Number(state.settings.sentenceSuggestionCount) || 5));
   state.settings.messageFontSize = Math.max(32, Math.min(72, Number(state.settings.messageFontSize) || 48));
+
+  state.snapshots = Array.isArray(storedSnapshots) ? storedSnapshots.slice(-SNAPSHOT_LIMIT) : [];
+  if (storedBackupMeta && typeof storedBackupMeta === 'object') {
+    state.backupMeta = {
+      lastExternalExport: Number(storedBackupMeta.lastExternalExport) || 0,
+    };
+  }
 
   if (storedUsage && typeof storedUsage === 'object') {
     state.usage = {
@@ -189,8 +203,6 @@ function updateConnectionStatus() {
 
 function applySettingsToUI() {
   document.documentElement.style.setProperty('--message-font-size', `${state.settings.messageFontSize}px`);
-  elements.wordSuggestionCount.value = String(state.settings.wordSuggestionCount);
-  elements.sentenceSuggestionCount.value = String(state.settings.sentenceSuggestionCount);
   elements.messageFontSize.value = String(state.settings.messageFontSize);
   elements.messageFontSizeOutput.value = `${state.settings.messageFontSize} px`;
   elements.messageFontSizeOutput.textContent = `${state.settings.messageFontSize} px`;
@@ -226,67 +238,39 @@ function setupNavigation() {
   }
 }
 
-function findExactWord(term) {
-  const normalized = normalizeWord(term);
-  return state.data.words.some((word) => normalizeWord(word.text) === normalized);
-}
-
-function determineFocusTerm(text, caret) {
-  const beforeCaret = text.slice(0, caret);
-  const tokens = tokenize(beforeCaret);
-  if (tokens.length === 0) return '';
-
-  const tokenMatch = beforeCaret.match(/[\p{L}\p{M}'’-]+$/u);
-  if (tokenMatch) {
-    const current = normalizeWord(tokenMatch[0]);
-    if (findExactWord(current)) return current;
-    if (state.focusTerm && tokens.includes(state.focusTerm)) return state.focusTerm;
-    return '';
-  }
-
-  return tokens[tokens.length - 1] || state.focusTerm || '';
-}
-
 function renderSuggestions() {
   const text = elements.message.value;
   const caret = elements.message.selectionStart ?? text.length;
   const beforeCaret = text.slice(0, caret);
-  const tokenMatch = beforeCaret.match(/[\p{L}\p{M}'’-]+$/u);
-  const prefix = normalizeWord(tokenMatch?.[0] ?? '');
 
-  state.wordSuggestions = rankWordSuggestions(
+  state.wordSuggestions = rankContinuationSuggestions(
+    state.data.sentences,
     state.data.words,
-    prefix,
-    state.usage.words,
-    state.settings.wordSuggestionCount,
+    beforeCaret,
+    state.usage,
+    CONTINUATION_LIMIT,
   );
 
-  if (prefix && state.wordSuggestions.length > 0) {
+  if (state.wordSuggestions.length > 0) {
     elements.wordPanel.hidden = false;
-    elements.wordContext.textContent = `Forslag til “${tokenMatch[0]}”`;
+    elements.wordContext.textContent = 'Højst 3 forslag';
     renderWordSuggestionButtons();
   } else {
     elements.wordPanel.hidden = true;
     elements.wordSuggestions.replaceChildren();
   }
 
-  const focusTerm = determineFocusTerm(text, caret);
-  if (!state.suppressSentenceSuggestions) state.focusTerm = focusTerm;
-  const queryTerms = tokenize(beforeCaret);
+  state.sentenceSuggestions = rankWholeSentenceSuggestions(
+    state.data.sentences,
+    beforeCaret,
+    state.usage.sentences,
+    SENTENCE_LIMIT,
+  );
 
-  state.sentenceSuggestions = state.suppressSentenceSuggestions
-    ? []
-    : rankSentenceSuggestions(
-      state.data.sentences,
-      queryTerms,
-      state.focusTerm,
-      state.usage.sentences,
-      state.settings.sentenceSuggestionCount,
-    );
-
-  if (state.focusTerm && state.sentenceSuggestions.length > 0) {
+  if (state.sentenceSuggestions.length > 0) {
     elements.sentencePanel.hidden = false;
-    elements.sentenceContext.textContent = `Indeholder “${state.focusTerm}”`;
+    const hasCompletion = state.sentenceSuggestions.some((item) => item.isPrefixCompletion);
+    elements.sentenceContext.textContent = hasCompletion ? 'Kan fuldføre din tekst' : 'Relevante hele sætninger';
     renderSentenceSuggestionButtons();
   } else {
     elements.sentencePanel.hidden = true;
@@ -305,7 +289,7 @@ function renderWordSuggestionButtons() {
     button.dataset.kind = 'word';
     button.dataset.index = String(index);
     button.setAttribute('role', 'option');
-    button.setAttribute('aria-label', `Indsæt ordet ${suggestion.text}`);
+    button.setAttribute('aria-label', `Fortsæt med ${suggestion.text}`);
     button.textContent = suggestion.text;
     button.addEventListener('click', () => applyWordSuggestion(index));
     button.addEventListener('keydown', handleSuggestionKeydown);
@@ -341,7 +325,8 @@ function renderSentenceSuggestionButtons() {
     button.dataset.index = String(index);
     button.setAttribute('role', 'option');
     button.setAttribute('aria-label', `Brug sætningen: ${suggestion.text}`);
-    appendHighlightedText(button, suggestion.text, state.focusTerm);
+    button.textContent = suggestion.text;
+    if (suggestion.isPrefixCompletion) button.dataset.completion = 'true';
     button.addEventListener('click', () => applySentenceSuggestion(index));
     button.addEventListener('keydown', handleSuggestionKeydown);
     fragment.append(button);
@@ -364,20 +349,17 @@ function applyWordSuggestion(index) {
   const suggestion = state.wordSuggestions[index];
   if (!suggestion) return;
 
-  const result = replaceCurrentToken(
+  const result = applyContinuationSuggestion(
     elements.message.value,
     elements.message.selectionStart ?? elements.message.value.length,
-    suggestion.text,
-    true,
+    suggestion,
   );
 
   state.previousMessage = elements.message.value;
-  state.focusTerm = normalizeWord(suggestion.text);
-  state.suppressSentenceSuggestions = false;
   elements.message.value = result.text;
   elements.message.focus();
   elements.message.setSelectionRange(result.selectionStart, result.selectionEnd);
-  incrementUsage('words', state.focusTerm);
+  if (suggestion.nextToken) incrementUsage('words', normalizeWord(suggestion.nextToken));
   queueSave({ draft: true });
   renderSuggestions();
 }
@@ -390,8 +372,6 @@ function applySentenceSuggestion(index) {
   elements.message.value = suggestion.text;
   elements.message.focus();
   elements.message.setSelectionRange(suggestion.text.length, suggestion.text.length);
-  state.focusTerm = '';
-  state.suppressSentenceSuggestions = true;
   incrementUsage('sentences', suggestion.id);
   for (const term of tokenize(suggestion.text)) incrementUsage('words', term);
   queueSave({ draft: true });
@@ -429,20 +409,42 @@ function handleSuggestionKeydown(event) {
   controls[nextIndex].focus();
 }
 
+function clearComposerText() {
+  if (!elements.message.value) return false;
+  state.previousMessage = elements.message.value;
+  elements.message.value = '';
+  elements.clearMessage.textContent = 'Gendan tekst';
+  queueSave({ draft: true });
+  renderSuggestions();
+  elements.message.focus();
+  showToast('Teksten er ryddet');
+  return true;
+}
+
+function restoreComposerText() {
+  if (!state.previousMessage) return false;
+  elements.message.value = state.previousMessage;
+  state.previousMessage = '';
+  elements.clearMessage.textContent = 'Ryd tekst';
+  queueSave({ draft: true });
+  renderSuggestions();
+  elements.message.focus();
+  elements.message.setSelectionRange(elements.message.value.length, elements.message.value.length);
+  return true;
+}
+
 function setupComposer() {
   elements.message.addEventListener('compositionstart', () => {
     state.isComposing = true;
   });
   elements.message.addEventListener('compositionend', () => {
     state.isComposing = false;
-    state.suppressSentenceSuggestions = false;
     queueSave({ draft: true });
     renderSuggestions();
   });
 
   elements.message.addEventListener('input', () => {
     if (state.isComposing) return;
-    state.suppressSentenceSuggestions = false;
     if (elements.message.value) elements.clearMessage.textContent = 'Ryd tekst';
     queueSave({ draft: true });
     renderSuggestions();
@@ -455,6 +457,14 @@ function setupComposer() {
 
   elements.message.addEventListener('keydown', (event) => {
     if (state.isComposing) return;
+
+    if (event.key === 'Escape' && !event.shiftKey && !event.ctrlKey && !event.metaKey && !event.altKey) {
+      if (elements.message.value) {
+        event.preventDefault();
+        clearComposerText();
+      }
+      return;
+    }
 
     if (event.key === 'Tab' && !event.shiftKey && state.wordSuggestions.length > 0) {
       event.preventDefault();
@@ -474,25 +484,8 @@ function setupComposer() {
   });
 
   elements.clearMessage.addEventListener('click', () => {
-    if (elements.message.value) {
-      state.previousMessage = elements.message.value;
-      elements.message.value = '';
-      elements.clearMessage.textContent = 'Gendan tekst';
-      state.focusTerm = '';
-      state.suppressSentenceSuggestions = false;
-      queueSave({ draft: true });
-      renderSuggestions();
-      elements.message.focus();
-      showToast('Teksten er ryddet');
-    } else if (state.previousMessage) {
-      elements.message.value = state.previousMessage;
-      state.previousMessage = '';
-      elements.clearMessage.textContent = 'Ryd tekst';
-      queueSave({ draft: true });
-      renderSuggestions();
-      elements.message.focus();
-      elements.message.setSelectionRange(elements.message.value.length, elements.message.value.length);
-    }
+    if (elements.message.value) clearComposerText();
+    else restoreComposerText();
   });
 }
 
@@ -747,22 +740,129 @@ function datedFilename(base, extension) {
   return `${base}-${date}.${extension}`;
 }
 
+
+function localDateKey(date = new Date()) {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, '0');
+  const day = String(date.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+}
+
+function createBackupPayload() {
+  return {
+    format: 'samtalestotte-backup',
+    schemaVersion: 1,
+    appVersion: APP_VERSION,
+    exportedAt: new Date().toISOString(),
+    data: state.data,
+    settings: state.settings,
+    usage: state.usage,
+    draft: elements.message.value,
+  };
+}
+
+function ensureDailySnapshot() {
+  const today = localDateKey();
+  const existing = state.snapshots.find((snapshot) => snapshot?.date === today);
+  if (existing) return;
+
+  const snapshot = {
+    id: `snapshot-${today}`,
+    date: today,
+    createdAt: new Date().toISOString(),
+    backup: createBackupPayload(),
+  };
+  state.snapshots = [...state.snapshots, snapshot]
+    .filter((item) => item && item.date && item.backup)
+    .sort((a, b) => String(a.date).localeCompare(String(b.date)))
+    .slice(-SNAPSHOT_LIMIT);
+  safeWriteStorage(STORAGE_KEYS.snapshots, state.snapshots);
+}
+
+function formatDateTime(timestamp) {
+  const date = new Date(timestamp);
+  if (!Number.isFinite(date.getTime())) return 'ukendt tidspunkt';
+  return new Intl.DateTimeFormat('da-DK', {
+    dateStyle: 'medium',
+    timeStyle: 'short',
+  }).format(date);
+}
+
+function renderBackupStatus() {
+  const snapshots = [...state.snapshots].sort((a, b) => String(b.createdAt).localeCompare(String(a.createdAt)));
+  elements.snapshotSelect.replaceChildren();
+
+  if (snapshots.length === 0) {
+    const option = document.createElement('option');
+    option.value = '';
+    option.textContent = 'Ingen snapshots endnu';
+    elements.snapshotSelect.append(option);
+    elements.snapshotSelect.disabled = true;
+    elements.restoreSnapshot.disabled = true;
+    elements.snapshotStatus.textContent = 'Ingen automatiske snapshots endnu.';
+  } else {
+    elements.snapshotSelect.disabled = false;
+    elements.restoreSnapshot.disabled = false;
+    for (const snapshot of snapshots) {
+      const option = document.createElement('option');
+      option.value = snapshot.id;
+      option.textContent = formatDateTime(snapshot.createdAt);
+      elements.snapshotSelect.append(option);
+    }
+    const newest = snapshots[0];
+    elements.snapshotStatus.textContent = `${snapshots.length} lokale snapshots · seneste ${formatDateTime(newest.createdAt)}.`;
+  }
+
+  const now = Date.now();
+  const lastExport = Number(state.backupMeta.lastExternalExport) || 0;
+  const oldestSnapshotTime = snapshots.length
+    ? new Date(snapshots[snapshots.length - 1].createdAt).getTime()
+    : now;
+  const reminderAgeMs = EXTERNAL_BACKUP_REMINDER_DAYS * 24 * 60 * 60 * 1000;
+  const shouldRemind = lastExport
+    ? now - lastExport >= reminderAgeMs
+    : snapshots.length > 0 && now - oldestSnapshotTime >= reminderAgeMs;
+
+  elements.externalBackupReminder.hidden = !shouldRemind;
+  if (shouldRemind) {
+    const days = lastExport ? Math.floor((now - lastExport) / (24 * 60 * 60 * 1000)) : EXTERNAL_BACKUP_REMINDER_DAYS;
+    elements.externalBackupReminder.textContent = lastExport
+      ? `Det er ${days} dage siden sidste eksterne JSON-backup.`
+      : 'Der er endnu ikke lavet en ekstern JSON-backup. De lokale snapshots ligger kun på denne enhed.';
+  }
+}
+
+function restoreSnapshot(snapshot) {
+  const backup = snapshot?.backup;
+  if (!backup?.data) throw new Error('Snapshot mangler data.');
+  state.data = sanitizeData(backup.data);
+  state.settings = { ...DEFAULT_SETTINGS, ...(backup.settings ?? {}) };
+  state.settings.messageFontSize = Math.max(32, Math.min(72, Number(state.settings.messageFontSize) || 48));
+  state.usage = {
+    words: backup.usage?.words ?? {},
+    sentences: backup.usage?.sentences ?? {},
+  };
+  elements.message.value = typeof backup.draft === 'string' ? backup.draft : '';
+  safeWriteStorage(STORAGE_KEYS.data, state.data);
+  safeWriteStorage(STORAGE_KEYS.settings, state.settings);
+  safeWriteStorage(STORAGE_KEYS.usage, state.usage);
+  safeWriteStorage(STORAGE_KEYS.draft, elements.message.value);
+  applySettingsToUI();
+  renderEditors();
+  renderSuggestions();
+}
+
 function setupDataTools() {
   elements.exportJson.addEventListener('click', () => {
-    const backup = {
-      format: 'samtalestotte-backup',
-      schemaVersion: 1,
-      appVersion: APP_VERSION,
-      exportedAt: new Date().toISOString(),
-      data: state.data,
-      settings: state.settings,
-      usage: state.usage,
-    };
+    const backup = createBackupPayload();
     downloadText(
       datedFilename('samtalestotte-backup', 'json'),
       JSON.stringify(backup, null, 2),
       'application/json',
     );
+    state.backupMeta.lastExternalExport = Date.now();
+    safeWriteStorage(STORAGE_KEYS.backupMeta, state.backupMeta);
+    renderBackupStatus();
   });
 
   elements.exportWordsCsv.addEventListener('click', () => {
@@ -775,6 +875,20 @@ function setupDataTools() {
       sentencesToCSV(state.data.sentences),
       'text/csv',
     );
+  });
+
+  elements.restoreSnapshot.addEventListener('click', () => {
+    const snapshot = state.snapshots.find((item) => item.id === elements.snapshotSelect.value);
+    if (!snapshot) return;
+    const confirmed = window.confirm(`Gendan snapshot fra ${formatDateTime(snapshot.createdAt)}? Aktuelle lokale data erstattes.`);
+    if (!confirmed) return;
+    try {
+      restoreSnapshot(snapshot);
+      showToast('Snapshot er gendannet');
+    } catch (error) {
+      console.error(error);
+      showToast('Snapshot kunne ikke gendannes', 5000);
+    }
   });
 
   elements.importButton.addEventListener('click', async () => {
@@ -810,6 +924,10 @@ function setupDataTools() {
             sentences: parsed.usage.sentences ?? {},
           };
         }
+        if (replace && typeof parsed?.draft === 'string') {
+          elements.message.value = parsed.draft;
+          safeWriteStorage(STORAGE_KEYS.draft, elements.message.value);
+        }
       } else {
         const imported = dataFromCSV(text);
         state.data = mergeData(state.data, imported.data, {
@@ -821,6 +939,7 @@ function setupDataTools() {
       queueSave({ data: true, settings: true, usage: true });
       renderEditors();
       renderSuggestions();
+      renderBackupStatus();
       setImportResult(`Import gennemført: ${state.data.words.length} ord og ${state.data.sentences.length} sætninger.`, false);
       elements.importFile.value = '';
     } catch (error) {
@@ -838,8 +957,6 @@ function setupDataTools() {
   elements.settingsForm.addEventListener('submit', (event) => {
     event.preventDefault();
     state.settings = {
-      wordSuggestionCount: Math.max(3, Math.min(12, Number(elements.wordSuggestionCount.value) || 6)),
-      sentenceSuggestionCount: Math.max(2, Math.min(10, Number(elements.sentenceSuggestionCount.value) || 5)),
       messageFontSize: Math.max(32, Math.min(72, Number(elements.messageFontSize.value) || 48)),
     };
     applySettingsToUI();
@@ -880,7 +997,7 @@ function registerServiceWorker() {
   if (!('serviceWorker' in navigator)) return;
   window.addEventListener('load', async () => {
     try {
-      await navigator.serviceWorker.register('./sw.js');
+      await navigator.serviceWorker.register('./sw.js?v=0.2.0');
     } catch (error) {
       console.warn('Service worker kunne ikke registreres', error);
     }
@@ -891,12 +1008,14 @@ function initialize() {
   collectElements();
   loadState();
   applySettingsToUI();
+  ensureDailySnapshot();
   setupNavigation();
   setupComposer();
   setupEditors();
   setupDataTools();
   renderEditors();
   renderSuggestions();
+  renderBackupStatus();
   updateConnectionStatus();
   window.addEventListener('online', updateConnectionStatus);
   window.addEventListener('offline', updateConnectionStatus);

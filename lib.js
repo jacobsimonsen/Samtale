@@ -7,6 +7,11 @@ const STOP_WORDS = new Set([
   'til', 'vi', 'vil', 'var', 'ved', 'være', 'været', 'denne', 'dette', 'disse', 'så',
 ]);
 
+export function isStopWord(value) {
+  const term = normalizeWord(value);
+  return Boolean(term) && STOP_WORDS.has(term);
+}
+
 export function normalizeText(value) {
   return String(value ?? '')
     .normalize('NFKC')
@@ -171,65 +176,261 @@ function sentenceTerms(sentence) {
   ].filter(Boolean));
 }
 
-export function rankSentenceSuggestions(
-  sentences,
-  queryTerms,
-  focusTerm,
-  usage = {},
-  limit = 5,
-) {
-  const normalizedQuery = unique((Array.isArray(queryTerms) ? queryTerms : tokenize(queryTerms)).map(normalizeWord).filter(Boolean));
-  const lastQueryTerm = normalizedQuery.length ? normalizedQuery[normalizedQuery.length - 1] : '';
-  const focus = normalizeWord(focusTerm) || lastQueryTerm || '';
-  if (!focus) return [];
+function meaningfulTerms(value) {
+  return unique(tokenize(value))
+    .filter((term) => term.length > 1 && !STOP_WORDS.has(term));
+}
 
+function termMatches(a, b) {
+  const left = normalizeWord(a);
+  const right = normalizeWord(b);
+  if (!left || !right) return false;
+  if (left === right) return true;
+  if (Math.min(left.length, right.length) < 4) return false;
+  return left.startsWith(right) || right.startsWith(left);
+}
+
+function sentenceTokenData(sentence) {
+  const display = tokenizeDisplay(sentence?.text);
+  return {
+    display,
+    normalized: display.map(normalizeWord),
+  };
+}
+
+function inputTokenData(value) {
+  const text = String(value ?? '');
+  const display = tokenizeDisplay(text);
+  return {
+    display,
+    normalized: display.map(normalizeWord),
+    endsWithToken: /[\p{L}\p{M}'’-]$/u.test(text),
+  };
+}
+
+/**
+ * Ranks short, context-sensitive continuations. Sentence-bank prefixes are
+ * preferred; ordinary word completion remains available as a fallback.
+ */
+export function rankContinuationSuggestions(
+  sentences,
+  words,
+  text,
+  usage = {},
+  limit = 3,
+) {
+  const source = String(text ?? '');
+  const input = inputTokenData(source);
+  const candidates = new Map();
+
+  for (const sentence of Array.isArray(sentences) ? sentences : []) {
+    const sentenceData = sentenceTokenData(sentence);
+    if (sentenceData.normalized.length === 0 || input.normalized.length === 0) continue;
+    if (input.normalized.length > sentenceData.normalized.length) continue;
+
+    let matches = true;
+    for (let index = 0; index < input.normalized.length; index += 1) {
+      const typed = input.normalized[index];
+      const target = sentenceData.normalized[index];
+      const isLast = index === input.normalized.length - 1;
+      const canBePrefix = isLast && input.endsWithToken;
+      if (canBePrefix ? !target.startsWith(typed) : target !== typed) {
+        matches = false;
+        break;
+      }
+    }
+    if (!matches) continue;
+
+    const lastIndex = input.normalized.length - 1;
+    const lastTyped = input.normalized[lastIndex];
+    const lastTarget = sentenceData.normalized[lastIndex];
+    const currentTokenIncomplete = input.endsWithToken && lastTyped !== lastTarget;
+    // Ved ét ufuldstændigt startord er den almindelige ord-autocomplete mere
+    // nyttig end at gætte på en bestemt sætningsstart.
+    if (input.normalized.length === 1 && currentTokenIncomplete) continue;
+    const extensionIndex = currentTokenIncomplete ? lastIndex : input.normalized.length;
+    if (extensionIndex >= sentenceData.normalized.length) continue;
+
+    const prefixDisplay = sentenceData.display.slice(0, extensionIndex + 1).join(' ');
+    const key = normalizeText(prefixDisplay);
+    const nextToken = sentenceData.normalized[extensionIndex];
+    const existing = candidates.get(key);
+    const score = 20_000
+      + clampPriority(sentence.priority) * 10
+      + usageBonus(usage.sentences?.[sentence.id])
+      + usageBonus(usage.words?.[nextToken])
+      + input.normalized.length * 350;
+
+    if (existing) {
+      existing.score += 240;
+      existing.sourceCount += 1;
+      existing.score = Math.max(existing.score, score);
+    } else {
+      candidates.set(key, {
+        kind: 'phrase',
+        text: prefixDisplay,
+        normalized: key,
+        nextToken,
+        score,
+        sourceCount: 1,
+      });
+    }
+  }
+
+  // Global autocomplete is particularly important when the current text is
+  // not the beginning of a sentence stored in the phrase bank.
+  const tokenInfo = getCurrentTokenInfo(source, source.length);
+  const exactCurrentWord = tokenInfo.prefix.length >= 2
+    && (Array.isArray(words) ? words : []).some((word) => normalizeWord(word?.text) === tokenInfo.prefix);
+  const shouldAddGlobalWords = tokenInfo.prefix
+    && !(exactCurrentWord && candidates.size > 0);
+  if (shouldAddGlobalWords) {
+    const wordResults = rankWordSuggestions(
+      words,
+      tokenInfo.prefix,
+      usage.words ?? {},
+      Math.max(8, Number(limit) * 3),
+    );
+    for (const word of wordResults) {
+      const key = normalizeWord(word.text);
+      if (candidates.has(key)) continue;
+      candidates.set(key, {
+        kind: 'word',
+        text: word.text,
+        normalized: key,
+        nextToken: key,
+        score: 7_000 + word.score,
+        sourceCount: 1,
+      });
+    }
+  }
+
+  return [...candidates.values()]
+    .sort((a, b) => b.score - a.score
+      || b.sourceCount - a.sourceCount
+      || a.text.length - b.text.length
+      || a.text.localeCompare(b.text, DANISH_LOCALE))
+    .slice(0, Math.max(1, Number(limit) || 3));
+}
+
+export function applyContinuationSuggestion(text, caretPosition, suggestion) {
+  const value = String(text ?? '');
+  const caret = Math.max(0, Math.min(value.length, Number(caretPosition) || 0));
+  if (!suggestion || suggestion.kind === 'word') {
+    return replaceCurrentToken(value, caret, suggestion?.text ?? '', true);
+  }
+
+  const before = value.slice(0, caret);
+  const after = value.slice(caret);
+  const leadingWhitespace = before.match(/^\s*/u)?.[0] ?? '';
+  const replacement = String(suggestion.text ?? '').trim();
+  let spacer = '';
+  let remaining = after;
+  if (remaining.startsWith(' ')) {
+    remaining = remaining.replace(/^ +/u, ' ');
+  } else if (remaining.length === 0 || !/^[,.;:!?)]/u.test(remaining)) {
+    spacer = ' ';
+  }
+  const nextText = `${leadingWhitespace}${replacement}${spacer}${remaining}`;
+  const selection = leadingWhitespace.length + replacement.length + spacer.length;
+  return { text: nextText, selectionStart: selection, selectionEnd: selection };
+}
+
+/**
+ * Ranks complete sentences. Stop/function words never create relevance by
+ * themselves. Short keyword-like input is allowed to be broad; longer input
+ * requires substantially stronger overlap unless it is a true prefix of a
+ * stored sentence.
+ */
+export function rankWholeSentenceSuggestions(
+  sentences,
+  queryText,
+  usage = {},
+  limit = 3,
+) {
+  const rawQuery = String(queryText ?? '').trim();
+  const normalizedQuery = normalizeText(rawQuery).replace(/[.!?]+$/u, '');
+  if (!normalizedQuery) return [];
+
+  const allQueryTerms = tokenize(rawQuery);
+  const contentQueryTerms = meaningfulTerms(rawQuery);
   const results = [];
   const seen = new Set();
 
   for (const sentence of Array.isArray(sentences) ? sentences : []) {
     const text = String(sentence?.text ?? '').trim();
-    const normalizedSentence = normalizeText(text);
-    if (!text || seen.has(normalizedSentence)) continue;
+    const normalizedSentence = normalizeText(text).replace(/[.!?]+$/u, '');
+    if (!text || seen.has(normalizedSentence) || normalizedSentence === normalizedQuery) continue;
+
+    const isPrefixCompletion = allQueryTerms.length >= 2
+      && normalizedSentence.startsWith(normalizedQuery)
+      && normalizedSentence !== normalizedQuery
+      && normalizedQuery.length >= 2;
 
     const terms = sentenceTerms(sentence);
-    const keywords = new Set((Array.isArray(sentence?.keywords) ? sentence.keywords : []).map(normalizeWord));
-    const focusMatches = terms.has(focus)
-      || [...terms].some((term) => term.startsWith(focus) || focus.startsWith(term));
-    if (!focusMatches) continue;
+    const meaningfulSentenceTerms = [...terms].filter((term) => !STOP_WORDS.has(term));
+    const keywords = new Set((Array.isArray(sentence?.keywords) ? sentence.keywords : [])
+      .map(normalizeWord)
+      .filter((term) => term && !STOP_WORDS.has(term)));
 
-    seen.add(normalizedSentence);
-    let score = clampPriority(sentence.priority) * 12;
-
-    if (keywords.has(focus)) score += 4_500;
-    else if (terms.has(focus)) score += 3_800;
-    else score += 2_000;
-
-    let matchedQueryTerms = 0;
-    for (const term of normalizedQuery) {
-      if (keywords.has(term)) {
-        score += 700;
-        matchedQueryTerms += 1;
-      } else if (terms.has(term)) {
-        score += 480;
-        matchedQueryTerms += 1;
-      } else if ([...terms].some((candidate) => candidate.startsWith(term) || term.startsWith(candidate))) {
-        score += 180;
-        matchedQueryTerms += 1;
-      }
+    let matchedContent = 0;
+    let keywordMatches = 0;
+    for (const queryTerm of contentQueryTerms) {
+      const keywordMatch = [...keywords].some((candidate) => termMatches(candidate, queryTerm));
+      const termMatch = meaningfulSentenceTerms.some((candidate) => termMatches(candidate, queryTerm));
+      if (keywordMatch || termMatch) matchedContent += 1;
+      if (keywordMatch) keywordMatches += 1;
     }
 
-    score += matchedQueryTerms * matchedQueryTerms * 80;
-    score += usageBonus(usage[sentence.id]);
-    score -= Math.max(0, text.length - 80) * 0.5;
+    const coverage = contentQueryTerms.length ? matchedContent / contentQueryTerms.length : 0;
+    const longInput = allQueryTerms.length >= 4;
+    let broadMatchAllowed = false;
 
-    results.push({ ...sentence, text, normalized: normalizedSentence, score });
+    if (contentQueryTerms.length === 1) {
+      broadMatchAllowed = !longInput && matchedContent === 1;
+    } else if (contentQueryTerms.length >= 2) {
+      broadMatchAllowed = longInput
+        ? matchedContent >= 2 && coverage >= 0.67
+        : matchedContent >= 1 && coverage >= 0.5;
+    }
+
+    if (!isPrefixCompletion && !broadMatchAllowed) continue;
+    seen.add(normalizedSentence);
+
+    let score = clampPriority(sentence.priority) * 6 + usageBonus(usage[sentence.id]);
+    if (isPrefixCompletion) {
+      score += 18_000 + Math.min(5_000, normalizedQuery.length * 100);
+    } else {
+      score += matchedContent * 3_200 + keywordMatches * 900 + Math.round(coverage * 2_000);
+      if (longInput) score += matchedContent * 700;
+    }
+    score -= Math.max(0, text.length - 90) * 0.35;
+
+    results.push({
+      ...sentence,
+      text,
+      normalized: normalizedSentence,
+      score,
+      isPrefixCompletion,
+      matchedContent,
+      coverage,
+    });
   }
 
   return results
     .sort((a, b) => b.score - a.score
+      || Number(b.isPrefixCompletion) - Number(a.isPrefixCompletion)
+      || b.matchedContent - a.matchedContent
       || a.text.length - b.text.length
       || a.text.localeCompare(b.text, DANISH_LOCALE))
-    .slice(0, Math.max(1, Number(limit) || 5));
+    .slice(0, Math.max(1, Number(limit) || 3));
+}
+
+// Compatibility wrapper for older callers/tests. The new app uses
+// rankWholeSentenceSuggestions directly.
+export function rankSentenceSuggestions(sentences, queryTerms, focusTerm, usage = {}, limit = 3) {
+  const query = Array.isArray(queryTerms) ? queryTerms.join(' ') : String(queryTerms ?? focusTerm ?? '');
+  return rankWholeSentenceSuggestions(sentences, query, usage, limit);
 }
 
 function sanitizeWord(entry) {
@@ -492,7 +693,7 @@ export function sentencesToCSV(sentences) {
     .sort((a, b) => a.text.localeCompare(b.text, DANISH_LOCALE))) {
     rows.push([
       sentence.text,
-      (Array.isArray(sentence.keywords) ? sentence.keywords : []).join('|'),
+      (Array.isArray(sentence.keywords) ? sentence.keywords : []).join(','),
       clampPriority(sentence.priority),
     ]);
   }
