@@ -14,6 +14,7 @@ import {
   rankWordSuggestions,
   replaceCurrentToken,
   sanitizeData,
+  stripLegacyBundledWords,
   sentencesToCSV,
   wordsToCSV,
 } from '../lib.js';
@@ -73,11 +74,11 @@ test('importerer ord-CSV', () => {
   assert.deepEqual(imported.data.words.map((word) => word.text), ['kaffe', 'kage']);
 });
 
-test('importerer sætnings-CSV og føjer ordene til ordlisten', () => {
+test('importerer sætnings-CSV uden at kopiere ordene til personlige ord', () => {
   const imported = dataFromCSV('sætning;stikord;prioritet\nJeg vil have kaffe.;kaffe|drikke;90');
   assert.equal(imported.kind, 'sentences');
   assert.equal(imported.data.sentences.length, 1);
-  assert.ok(imported.data.words.some((word) => word.text === 'kaffe'));
+  assert.deepEqual(imported.data.words, []);
 });
 
 test('fletter dubletter uden at miste højeste prioritet', () => {
@@ -159,13 +160,58 @@ test('en længere selvskrevet sætning får ikke et malplaceret kaffe-forslag', 
   assert.deepEqual(rankWholeSentenceSuggestions(sentences, 'er der kage til kaffen', {}, 3), []);
 });
 
-test('korte betydningsbærende stikord kan stadig give hele sætninger', () => {
+test('hele betydningsord kan give hele sætninger uanset ordlængde', () => {
   const sentences = [
     { id: '1', text: 'Jeg vil gerne have kaffe.', keywords: ['kaffe'], priority: 80 },
-    { id: '2', text: 'Kaffen er for varm.', keywords: ['kaffe', 'varm'], priority: 90 },
+    { id: '2', text: 'Vil du hjælpe mig med at flytte mit ben?', keywords: ['hjælp', 'flytte', 'ben'], priority: 88 },
   ];
-  const suggestions = rankWholeSentenceSuggestions(sentences, 'kaffe', {}, 3);
-  assert.equal(suggestions.length, 2);
+  assert.equal(rankWholeSentenceSuggestions(sentences, 'kaffe', {}, 3).length, 1);
+  assert.equal(rankWholeSentenceSuggestions(sentences, 'ben', {}, 3)[0].id, '2');
+});
+
+test('ufuldstændige ord udløser ikke hele sætninger via en skjult firetegnsregel', () => {
+  const sentences = [
+    { id: '1', text: 'Jeg vil gerne have kaffe.', keywords: ['kaffe'], priority: 80 },
+    { id: '2', text: 'Jeg vil gerne se fjernsyn.', keywords: ['fjernsyn', 'tv', 'se'], priority: 74 },
+  ];
+  assert.deepEqual(rankWholeSentenceSuggestions(sentences, 'kaf', {}, 3), []);
+  assert.deepEqual(rankWholeSentenceSuggestions(sentences, 'kaff', {}, 3), []);
+  assert.deepEqual(rankWholeSentenceSuggestions(sentences, 'fjer', {}, 3), []);
+  assert.equal(rankWholeSentenceSuggestions(sentences, 'fjernsyn', {}, 3)[0].id, '2');
+});
+
+test('en egentlig flerords-sætningsstart kan stadig fuldføres', () => {
+  const sentences = [
+    { id: '1', text: 'Kaffen er for varm.', keywords: ['kaffe', 'varm'], priority: 90 },
+  ];
+  const suggestions = rankWholeSentenceSuggestions(sentences, 'Kaffen er for', {}, 3);
+  assert.equal(suggestions.length, 1);
+  assert.equal(suggestions[0].isPrefixCompletion, true);
+});
+
+test('sætningsdata kopieres ikke automatisk til den synlige personlige ordliste', () => {
+  const data = sanitizeData({
+    words: [],
+    sentences: [{ id: 's', text: 'Peter kommer i morgen.', keywords: ['Peter'], priority: 80 }],
+  });
+  assert.deepEqual(data.words, []);
+  assert.equal(data.sentences.length, 1);
+});
+
+test('migration fjerner gamle starterord men bevarer eksplicitte personlige ord', () => {
+  const migrated = stripLegacyBundledWords({
+    appVersion: '0.3.0-beta1',
+    words: [
+      { id: 'starter-word-1', text: 'kaffe', priority: 90 },
+      { id: 'word-auto', text: 'Kaffen', priority: 50 },
+      { id: 'person-1', text: 'Eksempelnavn', priority: 80 },
+    ],
+    sentences: [
+      { id: 'starter-sentence-1', text: 'Kaffen er for varm.', keywords: ['kaffe', 'varm'], priority: 90 },
+    ],
+  });
+  assert.deepEqual(migrated.words.map((word) => word.text), ['Eksempelnavn']);
+  assert.equal(migrated.sentences.length, 1);
 });
 
 test('sætnings-CSV eksporterer stikord med komma og accepterer ældre lodrette streger', () => {

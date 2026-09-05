@@ -1,5 +1,28 @@
 # Ændringslog
 
+## 0.3.1-beta1 — 2026-09-05
+
+Mindre betaopdatering efter praktisk afprøvning af 0.3.0-beta1.
+
+### Sætningsforslag
+
+- Den skjulte 4-tegns præfiksregel er fjernet fra relevansen for hele sætninger.
+- Hele sætninger udløses af et helt meningsbærende ord, fx `ben` eller `kaffe`, eller af en egentlig flerords-sætningsfuldførelse.
+- Ufuldstændige ord som `kaf`, `kaff` og `fjer` giver derfor ikke alene hele sætninger. De håndteres først og fremmest af **Fortsæt**.
+- Funktionsord alene udløser fortsat ikke hele sætninger.
+
+### Personlige ord
+
+- Den synlige ordliste hedder nu **Personlige ord** og starter tom på en ny installation.
+- COR/sprogmodellen er fortsat det generelle danske ordgrundlag.
+- Ord fra sætningsbanken bruges fortsat internt i den personlige forudsigelse, men kopieres ikke til den synlige personlige ordliste.
+- Ved opdatering fra den tidligere beta fjernes medfølgende `starter-word-*` samt identificerbare autoord fra demonstrationssætninger. Eksplicit tilføjede/importerede ord bevares så vidt de kan skelnes fra de gamle starterdata.
+- Sætningsbank, kladde, indstillinger og brugslæring bruger fortsat samme lokale lagernøgler.
+
+### Test
+
+- Nye regressionstests dækker `kaf`/`kaff` kontra `kaffe`, korte hele betydningsord som `ben`, separat personlig ordliste og migration af gamle starterord.
+
 ## 0.3.0-beta1 — 2026-09-05
 
 Første integration af den nye danske sprogmodel i den almindelige PWA. Denne version er en beta til praktisk afprøvning.

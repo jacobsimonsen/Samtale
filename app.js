@@ -1,5 +1,5 @@
-import { DanishPredictor, applyModelSuggestion, recordContextChoice } from './language-model.js?v=0.3.0-beta1';
-import { DEFAULT_DATA } from './default-data.js?v=0.3.0-beta1';
+import { DanishPredictor, applyModelSuggestion, recordContextChoice } from './language-model.js?v=0.3.1-beta1';
+import { DEFAULT_DATA } from './default-data.js?v=0.3.1-beta1';
 import {
   applyContinuationSuggestion,
   clampPriority,
@@ -12,13 +12,14 @@ import {
   rankContinuationSuggestions,
   rankWholeSentenceSuggestions,
   sanitizeData,
+  stripLegacyBundledWords,
   sentencesToCSV,
   tokenize,
   unique,
   wordsToCSV,
-} from './lib.js?v=0.3.0-beta1';
+} from './lib.js?v=0.3.1-beta1';
 
-const APP_VERSION = '0.3.0-beta1';
+const APP_VERSION = '0.3.1-beta1';
 const STORAGE_KEYS = {
   data: 'samtalestotte.data.v1',
   settings: 'samtalestotte.settings.v1',
@@ -138,6 +139,12 @@ function safeWriteStorage(key, value) {
   }
 }
 
+function prepareDataForCurrentVersion(rawData) {
+  const source = rawData && typeof rawData === 'object' ? rawData : {};
+  const migrated = source.appVersion === APP_VERSION ? source : stripLegacyBundledWords(source);
+  return sanitizeData({ ...migrated, appVersion: APP_VERSION });
+}
+
 function loadState() {
   const storedData = safeReadStorage(STORAGE_KEYS.data, null);
   const storedSettings = safeReadStorage(STORAGE_KEYS.settings, null);
@@ -146,7 +153,13 @@ function loadState() {
   const storedSnapshots = safeReadStorage(STORAGE_KEYS.snapshots, []);
   const storedBackupMeta = safeReadStorage(STORAGE_KEYS.backupMeta, null);
 
-  if (storedData) state.data = sanitizeData(storedData);
+  if (storedData) {
+    const originalWordCount = Array.isArray(storedData.words) ? storedData.words.length : 0;
+    state.data = prepareDataForCurrentVersion(storedData);
+    if (state.data.words.length !== originalWordCount || storedData.appVersion !== APP_VERSION) {
+      safeWriteStorage(STORAGE_KEYS.data, state.data);
+    }
+  }
   state.settings = {
     ...DEFAULT_SETTINGS,
     ...(storedSettings && typeof storedSettings === 'object' ? storedSettings : {}),
@@ -573,13 +586,13 @@ function renderWordList() {
     .sort((a, b) => a.text.localeCompare(b.text, 'da-DK'));
   const visible = sorted.slice(0, 250);
 
-  elements.wordCount.textContent = `${state.data.words.length} ord`;
+  elements.wordCount.textContent = state.data.words.length === 1 ? '1 personligt ord' : `${state.data.words.length} personlige ord`;
   const fragment = document.createDocumentFragment();
 
   if (visible.length === 0) {
     const paragraph = document.createElement('p');
     paragraph.className = 'empty-list';
-    paragraph.textContent = 'Ingen ord matcher søgningen.';
+    paragraph.textContent = filter ? 'Ingen personlige ord matcher søgningen.' : 'Ingen personlige ord endnu.';
     fragment.append(paragraph);
   }
 
@@ -692,12 +705,13 @@ function resetSentenceForm() {
 function setupEditors() {
   elements.wordForm.addEventListener('submit', (event) => {
     event.preventDefault();
-    const text = normalizeWord(elements.wordText.value);
+    const text = elements.wordText.value.trim();
+    const normalizedText = normalizeWord(text);
     const priority = clampPriority(elements.wordPriority.value);
     const editId = elements.wordEditId.value;
-    if (!text) return;
+    if (!normalizedText) return;
 
-    const duplicate = state.data.words.find((word) => normalizeWord(word.text) === text && word.id !== editId);
+    const duplicate = state.data.words.find((word) => normalizeWord(word.text) === normalizedText && word.id !== editId);
     if (duplicate) {
       duplicate.priority = Math.max(duplicate.priority, priority);
       showToast('Ordet fandtes allerede; prioriteten er opdateret');
@@ -920,7 +934,7 @@ function renderBackupStatus() {
 function restoreSnapshot(snapshot) {
   const backup = snapshot?.backup;
   if (!backup?.data) throw new Error('Snapshot mangler data.');
-  state.data = sanitizeData(backup.data);
+  state.data = prepareDataForCurrentVersion(backup.data);
   state.settings = { ...DEFAULT_SETTINGS, ...(backup.settings ?? {}) };
   state.settings.messageFontSize = Math.max(32, Math.min(72, Number(state.settings.messageFontSize) || 48));
   state.settings.predictionEngine = state.settings.predictionEngine === 'v02' ? 'v02' : 'v03';
@@ -953,7 +967,7 @@ function setupDataTools() {
   });
 
   elements.exportWordsCsv.addEventListener('click', () => {
-    downloadText(datedFilename('samtalestotte-ord', 'csv'), wordsToCSV(state.data.words), 'text/csv');
+    downloadText(datedFilename('samtalestotte-personlige-ord', 'csv'), wordsToCSV(state.data.words), 'text/csv');
   });
 
   elements.exportSentencesCsv.addEventListener('click', () => {
@@ -997,9 +1011,11 @@ function setupDataTools() {
           throw new Error('JSON-filen har ikke det forventede dataformat.');
         }
 
+        const preparedIncomingData = prepareDataForCurrentVersion(incomingData);
         state.data = replace
-          ? sanitizeData(incomingData)
-          : mergeData(state.data, incomingData);
+          ? preparedIncomingData
+          : mergeData(state.data, preparedIncomingData);
+        state.data.appVersion = APP_VERSION;
 
         if (replace && parsed?.settings) {
           state.settings = { ...DEFAULT_SETTINGS, ...parsed.settings };
@@ -1024,13 +1040,14 @@ function setupDataTools() {
           replaceWords: replace && imported.kind === 'words',
           replaceSentences: replace && imported.kind === 'sentences',
         });
+        state.data.appVersion = APP_VERSION;
       }
 
       queueSave({ data: true, settings: true, usage: true });
       renderEditors();
       renderSuggestions();
       renderBackupStatus();
-      setImportResult(`Import gennemført: ${state.data.words.length} ord og ${state.data.sentences.length} sætninger.`, false);
+      setImportResult(`Import gennemført: ${state.data.words.length} personlige ord og ${state.data.sentences.length} sætninger.`, false);
       elements.importFile.value = '';
     } catch (error) {
       console.error(error);
@@ -1057,7 +1074,7 @@ function setupDataTools() {
   });
 
   elements.resetData.addEventListener('click', () => {
-    const confirmed = window.confirm('Nulstil ord og sætninger til demonstrationsdata? Lokale ændringer slettes.');
+    const confirmed = window.confirm('Nulstil personlige ord og sætninger? Personlige ord tømmes, og demonstrationssætningerne gendannes. Lokale ændringer slettes.');
     if (!confirmed) return;
     state.data = sanitizeData(structuredCloneSafe(DEFAULT_DATA));
     state.usage = { words: {}, sentences: {}, contexts: {} };
@@ -1066,7 +1083,7 @@ function setupDataTools() {
     resetSentenceForm();
     renderEditors();
     renderSuggestions();
-    showToast('Testdata er gendannet');
+    showToast('Personlige ord er tømt, og demonstrationssætningerne er gendannet');
   });
 }
 
@@ -1088,7 +1105,7 @@ function registerServiceWorker() {
   if (!('serviceWorker' in navigator)) return;
   window.addEventListener('load', async () => {
     try {
-      await navigator.serviceWorker.register('./sw.js?v=0.3.0-beta1');
+      await navigator.serviceWorker.register('./sw.js?v=0.3.1-beta1');
     } catch (error) {
       console.warn('Service worker kunne ikke registreres', error);
     }

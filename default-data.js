@@ -1,36 +1,8 @@
-const COMMON_WORDS = `
-advokat aften aftensmad aldrig alle alene allerede altid anden andre ansigt arbejde arm bagefter barn begynde bedst besked betale bil blive blod bog bord briller bruge brød burde byen dag derefter det dette dig din dine doktor drikke dårlig døren efter eftermiddag eller ellers enkelt familie far farligt fejl finde fint fisk fjern fjernbetjening flere flytte for foran forkert forklare forstår fortsæt fra frem fuld gå går gammel gang gerne glad glas godt gulv hjælp hjemme høre højre hånd ikke igen igennem jeg kaffe kage kald kan kande kold komme kommer kunne krop læge længe læse lidt lille længere mad mand medicin mere middag mig min mine morgen muligt mor måske mund navn nat nej noget nogen nok normal nu ny nær næste når okay op over pause person plads problem pude på radio ret rigtig ring rundt ryg sætning seng senere side sige skal skifte sko skrive sluk små snakke snart sofa sort spørgsmål stol stop stor svar svært søn søster tale tallerken tand telefon tid tilbage toilet træt tv tydeligt tøj ud under vand varm ven venstre vente videre vil vindue være væk værelse øje øjne øjeblik ønske ja
-
-af hvilken hvorfor hvem hvad hvor hvordan hvornår fordi derfor hvis men mens også bare både da de dem den der deres desuden du eller en et få får fik finde findes første først give giver gik gøre gør have har havde hele helt her hos hun ham han hende hver hverken ind ingen intet jo kunne man mange med mellem mod måtte meget måske ned nogen nogle om oppe os selv selvom sin sine sit siden sådan så til uden ved vi vores være var været bliver blev blive kommer kom siger sagde spørge spurgte tænke tror troede ønsker ønskede
-
-akut alarm albue apparat appelsin avis bad badekar bakke banan batteri ben beskidt besøg besøge bestille bevæge bluse bukser bus butik bytte bøf computer creme dyne døgn elevator energi familie foto fod fodstøtte fodtøj formiddag frisør fryser gave grød gulerod hår håndklæde høreapparat internet jakke juice kalender kartoffel kat køkken køleskab lampe larm lift lys madras mælk nøgle ost papir pille pude regning ris saft salat sandwich serviet skjorte skærm sokker suppe sygeplejerske tandlæge taske temperatur te tæppe ur uge weekend yoghurt
-
-åbne lukke tænde hente holde løfte sænke dreje rette flyt hjælpe vaske tørre spise drikke synke hoste hvile sove vågne sidde ligge stå komme gå ringe skrive læse se høre mærke føle spørge svare gentage forklare vælge ændre begynde slutte vente fortsætte stoppe købe betale bestille besøge savne huske glemme forstå mene tænke vide tro håbe ønske
-
-ondt smerte smerter presset tryk ånden åndedræt vejrtrækning hoste slim kvalme svimmel svimmelhed varm varme kold kulde tør tørstig sulten mæt træt udmattet urolig rolig bange tryg behagelig ubehagelig bedre værre stærk svag langsom hurtigt langsomt højt lavt tydelig uklart
-
-mandag tirsdag onsdag torsdag fredag lørdag søndag januar februar marts april maj juni juli august september oktober november december i dag i morgen i går formiddag eftermiddag aften nat tidligt sent snart senere nu
-
-nul en to tre fire fem seks syv otte ni ti første anden tredje halv hel mere mindre meget lidt
-
-kaffe kage kan kaffe kaffe kage kan
-`;
-
-const RAW_WORDS = COMMON_WORDS
-  .split(/\s+/u)
-  .map((word) => word.trim())
-  .filter(Boolean);
-
-const uniqueWords = [...new Set(RAW_WORDS.map((word) => word.toLocaleLowerCase('da-DK')))];
-
+// Den synlige personlige ordliste starter tom. Det generelle danske ordforraad ligger i language-data.json.
 export const DEFAULT_DATA = {
   schemaVersion: 1,
-  appVersion: '0.3.0-beta1',
-  words: uniqueWords.map((text, index) => ({
-    id: `starter-word-${index + 1}`,
-    text,
-    priority: Math.max(35, 100 - Math.floor(index / 9)),
-  })),
+  appVersion: '0.3.1-beta1',
+  words: [],
   sentences: [
     {
       id: 'starter-sentence-1',

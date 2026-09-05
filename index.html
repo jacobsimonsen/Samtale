@@ -13,14 +13,14 @@
   <link rel="manifest" href="./manifest.webmanifest">
   <link rel="apple-touch-icon" href="./icons/icon-192.png">
   <link rel="icon" href="./icons/icon-192.png" type="image/png">
-  <link rel="stylesheet" href="./styles.css?v=0.3.0-beta1">
+  <link rel="stylesheet" href="./styles.css?v=0.3.1-beta1">
 </head>
 <body>
   <a class="skip-link" href="#message">Gå til skrivefeltet</a>
 
   <header class="app-header">
     <div>
-      <p class="eyebrow">Prototype 0.3 beta</p>
+      <p class="eyebrow">Prototype 0.3.1 beta</p>
       <h1>Samtalestøtte</h1>
     </div>
     <div class="status-area" aria-live="polite">
@@ -98,24 +98,24 @@
     <section id="view-edit" class="view" aria-labelledby="edit-title" hidden>
       <div class="page-heading">
         <p class="section-kicker">Lokalt indhold</p>
-        <h2 id="edit-title">Redigér ord og sætninger</h2>
-        <p>Ændringer gemmes automatisk på denne enhed. Ord fra nye sætninger føjes automatisk til ordlisten.</p>
+        <h2 id="edit-title">Redigér personlige ord og sætninger</h2>
+        <p>Ændringer gemmes automatisk på denne enhed. Almindelige danske ord kommer fra det indbyggede COR-ordforråd. Listen med personlige ord er kun til navne, steder og særlige ord og starter tom.</p>
       </div>
 
       <div class="editor-layout">
         <section class="editor-card" aria-labelledby="word-editor-title">
           <div class="section-heading-row">
             <div>
-              <p class="section-kicker">Ordliste</p>
-              <h3 id="word-editor-title">Tilføj eller redigér ord</h3>
+              <p class="section-kicker">Personligt ordforråd</p>
+              <h3 id="word-editor-title">Tilføj eller redigér personligt ord</h3>
             </div>
             <span id="word-count" class="count-badge"></span>
           </div>
 
           <form id="word-form" class="stack-form">
             <input type="hidden" id="word-edit-id">
-            <label for="word-text">Ord</label>
-            <input id="word-text" name="word" type="text" inputmode="text" autocomplete="off" required>
+            <label for="word-text">Personligt ord</label>
+            <input id="word-text" name="word" type="text" inputmode="text" autocomplete="off" placeholder="fx navn eller særligt ord" required>
 
             <details class="advanced-settings">
               <summary>Avanceret</summary>
@@ -126,13 +126,14 @@
             </details>
 
             <div class="button-row">
-              <button type="submit" class="primary-button">Gem ord</button>
+              <button type="submit" class="primary-button">Gem personligt ord</button>
               <button type="button" id="cancel-word-edit" class="secondary-button" hidden>Annullér</button>
             </div>
           </form>
 
-          <label for="word-filter">Filtrér ordliste</label>
-          <input id="word-filter" type="search" placeholder="Søg efter ord">
+          <p class="field-help">Ord fra sætningsbanken bruges internt til personlige forslag, men kopieres ikke automatisk til denne liste.</p>
+          <label for="word-filter">Filtrér personlige ord</label>
+          <input id="word-filter" type="search" placeholder="Søg i personlige ord">
           <div id="word-list" class="editable-list" aria-live="polite"></div>
         </section>
 
@@ -189,7 +190,7 @@
           <p id="external-backup-reminder" class="backup-reminder" hidden></p>
           <div class="button-column">
             <button type="button" id="export-json" class="primary-button">Download komplet backup (.json)</button>
-            <button type="button" id="export-words-csv" class="secondary-button">Eksportér ord til regneark (.csv)</button>
+            <button type="button" id="export-words-csv" class="secondary-button">Eksportér personlige ord til regneark (.csv)</button>
             <button type="button" id="export-sentences-csv" class="secondary-button">Eksportér sætninger til regneark (.csv)</button>
           </div>
         </section>
@@ -221,7 +222,7 @@
 
         <section class="editor-card" aria-labelledby="settings-title">
           <h3 id="settings-title">Visning</h3>
-          <p>Prototype 0.3 viser højst tre fortsættelser og tre hele sætninger. Den nye motor kan skiftes fra, hvis den giver problemer.</p>
+          <p>Prototype 0.3.1 viser højst tre fortsættelser og tre hele sætninger. Den nye motor kan skiftes fra, hvis den giver problemer.</p>
           <form id="settings-form" class="stack-form">
 
             <label for="message-font-size">Skriftstørrelse i skrivefelt</label>
@@ -236,7 +237,7 @@
               <div class="advanced-settings-body">
                 <label for="prediction-engine">Forslagsmotor</label>
                 <select id="prediction-engine">
-                  <option value="v03">Ny v0.3: dansk sprogmodel + personlig læring</option>
+                  <option value="v03">Ny v0.3.1: dansk sprogmodel + personlig læring</option>
                   <option value="v02">Enkel v0.2: kun lokal ord- og sætningsbank</option>
                 </select>
                 <p class="field-help">Skift til v0.2, hvis den nye motor giver dårlige forslag. Dine personlige data slettes ikke.</p>
@@ -249,7 +250,7 @@
 
         <section class="editor-card danger-card" aria-labelledby="reset-title">
           <h3 id="reset-title">Nulstil testdata</h3>
-          <p>Dette sletter lokale ændringer og gendanner den medfølgende startordliste og demonstrationssætninger.</p>
+          <p>Dette sletter lokale ændringer, tømmer listen med personlige ord og gendanner demonstrationssætningerne. Det indbyggede COR-ordforråd påvirkes ikke.</p>
           <button type="button" id="reset-data" class="danger-button">Nulstil lokale data</button>
         </section>
       </div>
@@ -259,6 +260,6 @@
   <div id="toast" class="toast" role="status" aria-live="polite" hidden></div>
 
   <noscript>Denne app kræver JavaScript.</noscript>
-  <script type="module" src="./app.js?v=0.3.0-beta1"></script>
+  <script type="module" src="./app.js?v=0.3.1-beta1"></script>
 </body>
 </html>

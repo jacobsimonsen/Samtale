@@ -185,9 +185,10 @@ function termMatches(a, b) {
   const left = normalizeWord(a);
   const right = normalizeWord(b);
   if (!left || !right) return false;
-  if (left === right) return true;
-  if (Math.min(left.length, right.length) < 4) return false;
-  return left.startsWith(right) || right.startsWith(left);
+  // Hele saetninger maa ikke dukke op paa baggrund af et skjult praefiks-
+  // minimum. Et betydningsord skal vaere skrevet/valgt helt for at skabe
+  // relevans; egentlige saetningsfuldfoerelser haandteres separat nedenfor.
+  return left === right;
 }
 
 function sentenceTokenData(sentence) {
@@ -464,6 +465,37 @@ function sanitizeSentence(entry) {
   };
 }
 
+/**
+ * Removes the old bundled starter-word list during the 0.3.1 migration.
+ * Explicit user-added/imported words are retained. Older versions also copied
+ * a few words from bundled starter sentences into the visible word list; those
+ * generated entries are removed when they can be identified safely.
+ */
+export function stripLegacyBundledWords(rawData) {
+  const raw = rawData && typeof rawData === 'object' ? rawData : {};
+  const starterSentenceTerms = new Set();
+  for (const sentence of Array.isArray(raw.sentences) ? raw.sentences : []) {
+    if (!String(sentence?.id ?? '').startsWith('starter-sentence-')) continue;
+    for (const term of tokenize(sentence?.text ?? '')) starterSentenceTerms.add(term);
+    for (const keyword of Array.isArray(sentence?.keywords) ? sentence.keywords : []) {
+      const term = normalizeWord(keyword);
+      if (term) starterSentenceTerms.add(term);
+    }
+  }
+
+  const words = (Array.isArray(raw.words) ? raw.words : []).filter((entry) => {
+    const id = String(entry?.id ?? '');
+    if (id.startsWith('starter-word-')) return false;
+    const term = normalizeWord(entry?.text ?? entry?.word ?? entry?.ord ?? '');
+    const generatedFromStarterSentence = id.startsWith('word-')
+      && clampPriority(entry?.priority ?? entry?.prioritet) === 50
+      && starterSentenceTerms.has(term);
+    return !generatedFromStarterSentence;
+  });
+
+  return { ...raw, words };
+}
+
 export function sanitizeData(rawData) {
   const raw = rawData && typeof rawData === 'object' ? rawData : {};
   const words = [];
@@ -487,13 +519,6 @@ export function sanitizeData(rawData) {
     if (seenSentences.has(key)) continue;
     seenSentences.add(key);
     sentences.push(sentence);
-
-    for (const displayTerm of [...tokenizeDisplay(sentence.text), ...sentence.keywords]) {
-      const normalizedTerm = normalizeWord(displayTerm);
-      if (normalizedTerm.length < 2 || seenWords.has(normalizedTerm)) continue;
-      seenWords.add(normalizedTerm);
-      words.push({ id: createId('word'), text: displayTerm, priority: 50 });
-    }
   }
 
   return {
