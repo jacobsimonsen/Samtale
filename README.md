@@ -49,3 +49,20 @@ Se `SOURCES.md`. Den medfølgende model er bygget fra COR 1.5.1.0 og Danish Dyna
 ## Beta-status
 
 Modellen er ikke et færdigt dansk predictive keyboard. Det lille samtalekorpus kan give skæve eller grammatisk svage forslag. Versionen er beregnet til praktisk afprøvning af den samlede arbejdsgang og den personlige læring.
+
+## Lokal udvikling og test
+
+Kør JavaScript-baseline fra repository-roden:
+
+```bash
+npm test
+```
+
+Den statiske PWA-kontrol kræver Python-pakkerne i `requirements.txt`:
+
+```bash
+python3 -m pip install -r requirements.txt
+python3 tests/static-check.py
+```
+
+På Windows kan `py` bruges i stedet for `python3`, hvis det er den fungerende lokale Python-launcher.

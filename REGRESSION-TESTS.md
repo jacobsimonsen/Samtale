@@ -13,11 +13,27 @@ npm test
 python3 tests/static-check.py
 ```
 
+På Windows kan den statiske kontrol køres som `py tests/static-check.py`, hvis `python3`
+ikke peger på den rigtige lokale Python. Installer først Python-afhængighederne med:
+
+```bash
+python3 -m pip install -r requirements.txt
+```
+
+eller på Windows:
+
+```bash
+py -m pip install -r requirements.txt
+```
+
 Baseline ved oprettelsen af dette dokument:
 
 - `npm test`: **42/42 bestået**
 - `tests/static-check.py`: **bestået**
 - statisk kontrol: 61 HTML-id'er, 46 JS-referencer, 3 ikoner
+
+`npm test` kører bevidst kun testene i rodens `tests/`-mappe. Lokale arkivmapper
+som `v031` og `v032` må ikke påvirke den aktuelle baseline.
 
 En ændring må ikke merge, hvis en relevant eksisterende test fejler uden en eksplicit ændring af produktkravet.
 

@@ -4,7 +4,7 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "test": "node --test",
+    "test": "node --test tests/language-model.test.js tests/lib.test.js tests/real-model-smoke.test.js",
     "serve": "python3 -m http.server 8080"
   }
 }
