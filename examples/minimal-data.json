@@ -1,0 +1,23 @@
+{
+  "schemaVersion": 1,
+  "appVersion": "0.1.0",
+  "words": [
+    { "id": "demo-word-1", "text": "kaffe", "priority": 95 },
+    { "id": "demo-word-2", "text": "kage", "priority": 90 },
+    { "id": "demo-word-3", "text": "kan", "priority": 85 }
+  ],
+  "sentences": [
+    {
+      "id": "demo-sentence-1",
+      "text": "Jeg vil gerne have en kop kaffe.",
+      "keywords": ["kaffe", "drikke", "kop"],
+      "priority": 95
+    },
+    {
+      "id": "demo-sentence-2",
+      "text": "Kaffen er for varm.",
+      "keywords": ["kaffe", "varm"],
+      "priority": 90
+    }
+  ]
+}
