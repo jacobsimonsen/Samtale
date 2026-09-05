@@ -1,5 +1,13 @@
 # Ændringslog
 
+## 0.3.2-beta1 — 2026-09-05
+
+- Brugerfladen kalder nu JSON-backuppen **Personlig profil** og forklarer, at den kan flyttes mellem enheder.
+- Eksportfilen hedder nu `samtalestotte-personlig-profil-YYYY-MM-DD.json`.
+- JSON-import med **Flet** fletter nu også ord-, sætnings- og kontekstlæring. Sammenfletningen bruger maksimum pr. observation og er derfor idempotent ved gentagen import.
+- JSON-import med **Erstat** gendanner fortsat hele profilen inklusive indstillinger, kladde og læring.
+- Det underliggende backupformat er fortsat `samtalestotte-backup` schemaVersion 1, så eksisterende JSON-backups kan importeres.
+
 ## 0.3.1-beta1 — 2026-09-05
 
 Mindre betaopdatering efter praktisk afprøvning af 0.3.0-beta1.

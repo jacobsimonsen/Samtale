@@ -1,7 +1,7 @@
 // Den synlige personlige ordliste starter tom. Det generelle danske ordforraad ligger i language-data.json.
 export const DEFAULT_DATA = {
   schemaVersion: 1,
-  appVersion: '0.3.1-beta1',
+  appVersion: '0.3.2-beta1',
   words: [],
   sentences: [
     {

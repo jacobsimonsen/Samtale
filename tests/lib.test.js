@@ -7,6 +7,7 @@ import {
   deriveKeywords,
   getCurrentTokenInfo,
   mergeData,
+  mergeUsageData,
   parseDelimited,
   rankContinuationSuggestions,
   rankSentenceSuggestions,
@@ -224,4 +225,29 @@ test('sætnings-CSV eksporterer stikord med komma og accepterer ældre lodrette 
   const legacy = dataFromCSV('sætning;stikord;prioritet\nHvad er klokken?;tid|klokken|hvad;50');
   assert.deepEqual(modern.data.sentences[0].keywords, ['tid', 'klokken', 'hvad']);
   assert.deepEqual(legacy.data.sentences[0].keywords, ['tid', 'klokken', 'hvad']);
+});
+
+
+test('personlig profil fletter brugslæring idempotent', () => {
+  const base = {
+    words: { kaffe: { count: 3, lastUsed: 10 } },
+    sentences: {},
+    contexts: { 'have\u241fnoget\u241fat': { drikke: { count: 2, lastUsed: 20 } } },
+  };
+  const incoming = {
+    words: { kaffe: { count: 2, lastUsed: 30 }, te: { count: 4, lastUsed: 25 } },
+    sentences: { s1: { count: 2, lastUsed: 40 } },
+    contexts: {
+      'have\u241fnoget\u241fat': { drikke: { count: 5, lastUsed: 50 } },
+      'jeg\u241fvil': { gerne: { count: 3, lastUsed: 60 } },
+    },
+  };
+  const merged = mergeUsageData(base, incoming);
+  assert.equal(merged.words.kaffe.count, 3);
+  assert.equal(merged.words.kaffe.lastUsed, 30);
+  assert.equal(merged.words.te.count, 4);
+  assert.equal(merged.sentences.s1.count, 2);
+  assert.equal(merged.contexts['have\u241fnoget\u241fat'].drikke.count, 5);
+  assert.equal(merged.contexts['jeg\u241fvil'].gerne.count, 3);
+  assert.deepEqual(mergeUsageData(merged, incoming), merged);
 });

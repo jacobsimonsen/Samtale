@@ -1,9 +1,9 @@
-const VERSION = 'v0.3.1-beta1';
+const VERSION = 'v0.3.2-beta1';
 const CACHE_PREFIX = 'samtalestotte:' + new URL(self.registration.scope).pathname + ':';
 const CACHE_NAME = CACHE_PREFIX + VERSION;
 const APP_SHELL = ['./', './index.html',
-  './styles.css?v=0.3.1-beta1', './app.js?v=0.3.1-beta1', './lib.js?v=0.3.1-beta1',
-  './language-model.js?v=0.3.1-beta1', './default-data.js?v=0.3.1-beta1', './manifest.webmanifest',
+  './styles.css?v=0.3.2-beta1', './app.js?v=0.3.2-beta1', './lib.js?v=0.3.2-beta1',
+  './language-model.js?v=0.3.2-beta1', './default-data.js?v=0.3.2-beta1', './manifest.webmanifest',
   './icons/icon-192.png', './icons/icon-512.png', './icons/icon-maskable-512.png'];
 const LANGUAGE_ASSETS = ['./language-data.json'];
 self.addEventListener('install', (event) => {

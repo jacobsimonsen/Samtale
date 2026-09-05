@@ -13,14 +13,14 @@
   <link rel="manifest" href="./manifest.webmanifest">
   <link rel="apple-touch-icon" href="./icons/icon-192.png">
   <link rel="icon" href="./icons/icon-192.png" type="image/png">
-  <link rel="stylesheet" href="./styles.css?v=0.3.1-beta1">
+  <link rel="stylesheet" href="./styles.css?v=0.3.2-beta1">
 </head>
 <body>
   <a class="skip-link" href="#message">Gå til skrivefeltet</a>
 
   <header class="app-header">
     <div>
-      <p class="eyebrow">Prototype 0.3.1 beta</p>
+      <p class="eyebrow">Prototype 0.3.2 beta</p>
       <h1>Samtalestøtte</h1>
     </div>
     <div class="status-area" aria-live="polite">
@@ -185,11 +185,11 @@
 
       <div class="data-layout">
         <section class="editor-card" aria-labelledby="backup-title">
-          <h3 id="backup-title">Backup og eksport</h3>
-          <p><strong>JSON</strong> er en komplet backup af appens aktuelle data og læring. <strong>CSV</strong> er beregnet til redigering i Excel eller et andet regneark.</p>
+          <h3 id="backup-title">Personlig profil og backup</h3>
+          <p><strong>Personlig profil (.json)</strong> indeholder personlige ord, sætningsbank og lokal brugslæring samt de nuværende indstillinger og kladde. Brug den som backup eller til at flytte profilen til en anden enhed. Den generelle danske sprogmodel er ikke med i filen. <strong>CSV</strong> er beregnet til redigering af ord og sætninger i et regneark.</p>
           <p id="external-backup-reminder" class="backup-reminder" hidden></p>
           <div class="button-column">
-            <button type="button" id="export-json" class="primary-button">Download komplet backup (.json)</button>
+            <button type="button" id="export-json" class="primary-button">Eksportér personlig profil (.json)</button>
             <button type="button" id="export-words-csv" class="secondary-button">Eksportér personlige ord til regneark (.csv)</button>
             <button type="button" id="export-sentences-csv" class="secondary-button">Eksportér sætninger til regneark (.csv)</button>
           </div>
@@ -205,24 +205,24 @@
         </section>
 
         <section class="editor-card" aria-labelledby="import-title">
-          <h3 id="import-title">Importér</h3>
-          <p>Understøtter appens JSON-format samt semikolonsepareret CSV. Stikord i en CSV-celle kan adskilles med komma; ældre filer med <code>|</code> understøttes fortsat.</p>
+          <h3 id="import-title">Importér personlig profil eller CSV</h3>
+          <p><strong>JSON</strong> flytter eller gendanner en personlig profil. Ved <em>Flet</em> flettes ord, sætninger og brugslæring med denne enhed; ved <em>Erstat</em> gendannes hele profilen inklusive indstillinger og kladde. <strong>CSV</strong> bruges kun til ord eller sætninger. Stikord i en CSV-celle kan adskilles med komma; ældre filer med <code>|</code> understøttes fortsat.</p>
 
           <label for="import-mode">Importmetode</label>
           <select id="import-mode">
             <option value="merge">Flet med eksisterende indhold</option>
-            <option value="replace">Erstat eksisterende indhold</option>
+            <option value="replace">Erstat denne enheds personlige profil / indhold</option>
           </select>
 
           <label for="import-file">Vælg fil</label>
           <input id="import-file" type="file" accept=".json,.csv,text/csv,application/json">
-          <button type="button" id="import-button" class="primary-button">Importér valgt fil</button>
+          <button type="button" id="import-button" class="primary-button">Importér personlig profil / CSV</button>
           <p id="import-result" class="result-message" aria-live="polite"></p>
         </section>
 
         <section class="editor-card" aria-labelledby="settings-title">
           <h3 id="settings-title">Visning</h3>
-          <p>Prototype 0.3.1 viser højst tre fortsættelser og tre hele sætninger. Den nye motor kan skiftes fra, hvis den giver problemer.</p>
+          <p>Prototype 0.3.2 viser højst tre fortsættelser og tre hele sætninger. Den nye motor kan skiftes fra, hvis den giver problemer.</p>
           <form id="settings-form" class="stack-form">
 
             <label for="message-font-size">Skriftstørrelse i skrivefelt</label>
@@ -237,7 +237,7 @@
               <div class="advanced-settings-body">
                 <label for="prediction-engine">Forslagsmotor</label>
                 <select id="prediction-engine">
-                  <option value="v03">Ny v0.3.1: dansk sprogmodel + personlig læring</option>
+                  <option value="v03">Ny v0.3.2: dansk sprogmodel + personlig læring</option>
                   <option value="v02">Enkel v0.2: kun lokal ord- og sætningsbank</option>
                 </select>
                 <p class="field-help">Skift til v0.2, hvis den nye motor giver dårlige forslag. Dine personlige data slettes ikke.</p>
@@ -260,6 +260,6 @@
   <div id="toast" class="toast" role="status" aria-live="polite" hidden></div>
 
   <noscript>Denne app kræver JavaScript.</noscript>
-  <script type="module" src="./app.js?v=0.3.1-beta1"></script>
+  <script type="module" src="./app.js?v=0.3.2-beta1"></script>
 </body>
 </html>

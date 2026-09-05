@@ -1,5 +1,5 @@
-import { DanishPredictor, applyModelSuggestion, recordContextChoice } from './language-model.js?v=0.3.1-beta1';
-import { DEFAULT_DATA } from './default-data.js?v=0.3.1-beta1';
+import { DanishPredictor, applyModelSuggestion, recordContextChoice } from './language-model.js?v=0.3.2-beta1';
+import { DEFAULT_DATA } from './default-data.js?v=0.3.2-beta1';
 import {
   applyContinuationSuggestion,
   clampPriority,
@@ -7,6 +7,7 @@ import {
   dataFromCSV,
   deriveKeywords,
   mergeData,
+  mergeUsageData,
   normalizeText,
   normalizeWord,
   rankContinuationSuggestions,
@@ -17,9 +18,9 @@ import {
   tokenize,
   unique,
   wordsToCSV,
-} from './lib.js?v=0.3.1-beta1';
+} from './lib.js?v=0.3.2-beta1';
 
-const APP_VERSION = '0.3.1-beta1';
+const APP_VERSION = '0.3.2-beta1';
 const STORAGE_KEYS = {
   data: 'samtalestotte.data.v1',
   settings: 'samtalestotte.settings.v1',
@@ -957,7 +958,7 @@ function setupDataTools() {
   elements.exportJson.addEventListener('click', () => {
     const backup = createBackupPayload();
     downloadText(
-      datedFilename('samtalestotte-backup', 'json'),
+      datedFilename('samtalestotte-personlig-profil', 'json'),
       JSON.stringify(backup, null, 2),
       'application/json',
     );
@@ -1023,12 +1024,14 @@ function setupDataTools() {
           state.settings.predictionEngine = state.settings.predictionEngine === 'v02' ? 'v02' : 'v03';
           applySettingsToUI();
         }
-        if (replace && parsed?.usage) {
-          state.usage = {
-            words: parsed.usage.words ?? {},
-            sentences: parsed.usage.sentences ?? {},
-            contexts: parsed.usage.contexts ?? {},
-          };
+        if (parsed?.usage) {
+          state.usage = replace
+            ? {
+                words: parsed.usage.words ?? {},
+                sentences: parsed.usage.sentences ?? {},
+                contexts: parsed.usage.contexts ?? {},
+              }
+            : mergeUsageData(state.usage, parsed.usage);
         }
         if (replace && typeof parsed?.draft === 'string') {
           elements.message.value = parsed.draft;
@@ -1047,7 +1050,8 @@ function setupDataTools() {
       renderEditors();
       renderSuggestions();
       renderBackupStatus();
-      setImportResult(`Import gennemført: ${state.data.words.length} personlige ord og ${state.data.sentences.length} sætninger.`, false);
+      const importedKind = lowerName.endsWith('.json') || file.type.includes('json') ? 'Personlig profil importeret' : 'CSV importeret';
+      setImportResult(`${importedKind}: ${state.data.words.length} personlige ord og ${state.data.sentences.length} sætninger.`, false);
       elements.importFile.value = '';
     } catch (error) {
       console.error(error);
@@ -1105,7 +1109,7 @@ function registerServiceWorker() {
   if (!('serviceWorker' in navigator)) return;
   window.addEventListener('load', async () => {
     try {
-      await navigator.serviceWorker.register('./sw.js?v=0.3.1-beta1');
+      await navigator.serviceWorker.register('./sw.js?v=0.3.2-beta1');
     } catch (error) {
       console.warn('Service worker kunne ikke registreres', error);
     }

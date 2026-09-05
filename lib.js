@@ -529,6 +529,43 @@ export function sanitizeData(rawData) {
   };
 }
 
+export function mergeUsageData(baseUsage, incomingUsage) {
+  const base = baseUsage && typeof baseUsage === 'object' ? baseUsage : {};
+  const incoming = incomingUsage && typeof incomingUsage === 'object' ? incomingUsage : {};
+
+  function mergeFlatGroup(a, b) {
+    const result = {};
+    const keys = new Set([
+      ...Object.keys(a && typeof a === 'object' ? a : {}),
+      ...Object.keys(b && typeof b === 'object' ? b : {}),
+    ]);
+    for (const key of keys) {
+      const left = a?.[key] ?? {};
+      const right = b?.[key] ?? {};
+      result[key] = {
+        count: Math.max(Number(left.count) || 0, Number(right.count) || 0),
+        lastUsed: Math.max(Number(left.lastUsed) || 0, Number(right.lastUsed) || 0),
+      };
+    }
+    return result;
+  }
+
+  const contexts = {};
+  const contextKeys = new Set([
+    ...Object.keys(base.contexts && typeof base.contexts === 'object' ? base.contexts : {}),
+    ...Object.keys(incoming.contexts && typeof incoming.contexts === 'object' ? incoming.contexts : {}),
+  ]);
+  for (const contextKey of contextKeys) {
+    contexts[contextKey] = mergeFlatGroup(base.contexts?.[contextKey], incoming.contexts?.[contextKey]);
+  }
+
+  return {
+    words: mergeFlatGroup(base.words, incoming.words),
+    sentences: mergeFlatGroup(base.sentences, incoming.sentences),
+    contexts,
+  };
+}
+
 export function mergeData(baseData, incomingData, options = {}) {
   const base = sanitizeData(baseData);
   const incoming = sanitizeData(incomingData);
